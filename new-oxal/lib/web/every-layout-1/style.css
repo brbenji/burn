@@ -1,0 +1,405 @@
+/* every-layout.css : composable layout primitives for Oxal/Sail
+ *
+ * Based on Every Layout by Heydon Pickering and Andy Bell.
+ * Custom HTML elements for use in Sail: ;stack, ;center, ;cluster, etc.
+ * Coexists with feather/zozo — this handles layout, zozo handles aesthetics.
+ *
+ * Usage in Sail:
+ *   ;stack
+ *     ;h1: Title
+ *     ;p: First paragraph
+ *     ;p: Second paragraph
+ *   ==
+ */
+
+
+/* ==========================================================================
+   Part 1: Foundation — Modular Scale + Axioms
+   ========================================================================== */
+
+:root {
+  /* Modular scale: change --el-ratio to retune all spacing */
+  --el-ratio: 1.5;
+  --el-s-5: calc(var(--el-s-4) / var(--el-ratio));
+  --el-s-4: calc(var(--el-s-3) / var(--el-ratio));
+  --el-s-3: calc(var(--el-s-2) / var(--el-ratio));
+  --el-s-2: calc(var(--el-s-1) / var(--el-ratio));
+  --el-s-1: calc(var(--el-s0) / var(--el-ratio));
+  --el-s0: 1rem;
+  --el-s1: calc(var(--el-s0) * var(--el-ratio));
+  --el-s2: calc(var(--el-s1) * var(--el-ratio));
+  --el-s3: calc(var(--el-s2) * var(--el-ratio));
+  --el-s4: calc(var(--el-s3) * var(--el-ratio));
+  --el-s5: calc(var(--el-s4) * var(--el-ratio));
+
+  /* The measure: maximum inline size for readable text */
+  --measure: 60ch;
+}
+
+
+/* All custom layout elements must be block-level */
+stack,
+box,
+lane,
+cluster,
+sidebar,
+switcher,
+cover,
+grid,
+shape,
+reel,
+icon,
+imposter {
+  display: block;
+}
+
+
+/* ==========================================================================
+   Part 2: The Stack
+   Vertical spacing between siblings via the "owl selector".
+   --space: gap between children (default: --el-s1)
+   ========================================================================== */
+
+stack {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+stack > * {
+  margin-block: 0;
+}
+
+stack > * + * {
+  margin-block-start: var(--space, var(--el-s1));
+}
+
+/* Recursive variant: apply spacing at any depth */
+stack[recursive] * + * {
+  margin-block-start: var(--space, var(--el-s1));
+}
+
+/* Split variant: push children after nth to the bottom */
+stack[split-after="1"] > :nth-child(1) { margin-block-end: auto; }
+stack[split-after="2"] > :nth-child(2) { margin-block-end: auto; }
+stack[split-after="3"] > :nth-child(3) { margin-block-end: auto; }
+stack[split-after="4"] > :nth-child(4) { margin-block-end: auto; }
+stack[split-after="5"] > :nth-child(5) { margin-block-end: auto; }
+
+
+/* ==========================================================================
+   Part 3: The Box
+   Padded container with optional border and color inversion.
+   --padding: internal spacing (default: --el-s1)
+   --border-width: border thickness (default: 0)
+   ========================================================================== */
+
+box {
+  padding: var(--padding, var(--el-s1));
+  border: var(--border-width, 0) solid;
+  outline: var(--border-width, 0) solid transparent;
+  outline-offset: calc(var(--border-width, 0) * -1);
+}
+
+box[invert] {
+  background-color: var(--f0, #222);
+  color: var(--b0, #fff);
+}
+
+
+/* ==========================================================================
+   Part 4: The Lane (Every Layout's "Center", renamed)
+   Constrains inline size and centers with margin-inline auto.
+   Renamed from "center" to avoid collision with the legacy HTML <center>
+   element, which browsers give text-align: -webkit-center in the UA
+   stylesheet. "Lane" also better describes the composition pattern:
+   multiple lanes can sit side by side in a flex/grid context, each
+   constraining its own content width independently.
+   --max: maximum width (default: --measure)
+   --gutters: side padding (default: 0)
+   ========================================================================== */
+
+lane {
+  max-inline-size: var(--max, var(--measure));
+  margin-inline: auto;
+  padding-inline: var(--gutters, 0);
+  box-sizing: content-box;
+}
+
+/* Intrinsic centering: center content that is narrower than max */
+lane[intrinsic] {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+lane[and-text] {
+  text-align: center;
+}
+
+
+/* ==========================================================================
+   Part 5: The Cluster
+   Horizontal grouping with flex-wrap (tags, buttons, nav items).
+   --space: gap between items (default: --el-s1)
+   --justify: horizontal alignment (default: flex-start)
+   --align: vertical alignment (default: center)
+   ========================================================================== */
+
+cluster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space, var(--el-s1));
+  justify-content: var(--justify, flex-start);
+  align-items: var(--align, center);
+}
+
+
+/* ==========================================================================
+   Part 6: The Sidebar
+   Two-child layout: sidebar + content. Stacks when content gets too narrow.
+   --side-width: sidebar basis (default: 20rem)
+   --content-min: content minimum before wrapping (default: 50%)
+   --space: gap between sidebar and content (default: --el-s1)
+   ========================================================================== */
+
+sidebar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space, var(--el-s1));
+}
+
+sidebar > * {
+  flex-grow: 1;
+}
+
+/* First child = sidebar */
+sidebar > :first-child {
+  flex-basis: var(--side-width, 20rem);
+}
+
+/* Second child = content */
+sidebar > :last-child {
+  flex-basis: 0;
+  flex-grow: 999;
+  min-inline-size: var(--content-min, 50%);
+}
+
+/* Flip: sidebar on the right */
+sidebar[side="right"] > :first-child {
+  flex-basis: 0;
+  flex-grow: 999;
+  min-inline-size: var(--content-min, 50%);
+}
+
+sidebar[side="right"] > :last-child {
+  flex-basis: var(--side-width, 20rem);
+  flex-grow: 1;
+}
+
+/* No stretch: don't force equal heights */
+sidebar[no-stretch] {
+  align-items: flex-start;
+}
+
+
+/* ==========================================================================
+   Part 7: The Switcher
+   Threshold-based horizontal/vertical switch. No intermediate states.
+   --threshold: container width at which to switch (default: 30rem)
+   --space: gap between items (default: --el-s1)
+   --limit: max items before forcing vertical (default: none)
+   ========================================================================== */
+
+switcher {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space, var(--el-s1));
+}
+
+switcher > * {
+  flex-grow: 1;
+  flex-basis: calc((var(--threshold, 30rem) - 100%) * 999);
+}
+
+/* Quantity query: force vertical when 5+ children */
+switcher[limit="4"] > :nth-last-child(n+5),
+switcher[limit="4"] > :nth-last-child(n+5) ~ * {
+  flex-basis: 100%;
+}
+
+switcher[limit="3"] > :nth-last-child(n+4),
+switcher[limit="3"] > :nth-last-child(n+4) ~ * {
+  flex-basis: 100%;
+}
+
+switcher[limit="2"] > :nth-last-child(n+3),
+switcher[limit="2"] > :nth-last-child(n+3) ~ * {
+  flex-basis: 100%;
+}
+
+
+/* ==========================================================================
+   Part 8: The Cover
+   Full-height layout with vertically centered principal element.
+   --min-height: minimum block size (default: 100vh)
+   --space: padding (default: --el-s1)
+   ========================================================================== */
+
+cover {
+  display: flex;
+  flex-direction: column;
+  min-block-size: var(--min-height, 100vh);
+  padding: var(--space, var(--el-s1));
+}
+
+cover > * {
+  margin-block: var(--space, var(--el-s1));
+}
+
+cover > [data-centered] {
+  margin-block: auto;
+}
+
+cover > :first-child:not([data-centered]) {
+  margin-block-start: 0;
+}
+
+cover > :last-child:not([data-centered]) {
+  margin-block-end: 0;
+}
+
+cover[no-pad] {
+  padding: 0;
+}
+
+
+/* ==========================================================================
+   Part 9: The Grid
+   Auto-fill responsive columns. No breakpoints.
+   --min: minimum column width (default: 250px)
+   --space: gap between cells (default: --el-s1)
+   ========================================================================== */
+
+grid {
+  display: grid;
+  gap: var(--space, var(--el-s1));
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(min(var(--min, 250px), 100%), 1fr)
+  );
+}
+
+
+/* ==========================================================================
+   Part 10: The Shape (renamed from Frame — <frame> is an HTML void element)
+   Enforce aspect ratio on child media.
+   --ratio: aspect ratio (default: 16 / 9)
+   ========================================================================== */
+
+shape {
+  aspect-ratio: var(--ratio, 16 / 9);
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+shape > * {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+/* Let replaced media determine its own block-size while still filling the
+   available inline-size. Useful when the source image's intrinsic ratio is
+   the desired visual ratio and no fixed frame is needed. */
+shape[intrinsic] {
+  aspect-ratio: auto;
+}
+
+shape[intrinsic] > * {
+  block-size: auto;
+  object-fit: contain;
+}
+
+
+/* ==========================================================================
+   Part 11: The Reel
+   Horizontal scrolling row.
+   --item-width: fixed item width (default: auto)
+   --space: gap between items (default: --el-s1)
+   --height: track height (default: auto)
+   ========================================================================== */
+
+reel {
+  display: flex;
+  block-size: var(--height, auto);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-color: var(--f5, #888) var(--b2, #eee);
+}
+
+reel > * {
+  flex: 0 0 var(--item-width, auto);
+}
+
+reel > * + * {
+  margin-inline-start: var(--space, var(--el-s1));
+}
+
+reel > img {
+  block-size: 100%;
+  flex-basis: auto;
+  width: auto;
+}
+
+/* Extra padding when scrollbar is visible */
+reel.overflowing {
+  padding-block-end: var(--space, var(--el-s1));
+}
+
+
+/* ==========================================================================
+   Part 12: The Icon
+   Inline SVG alignment with text.
+   --space: gap between icon and text (default: 0.5em)
+   ========================================================================== */
+
+icon {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space, 0.5em);
+}
+
+icon > svg {
+  inline-size: 0.75em;
+  inline-size: 1cap;  /* progressive enhancement: 1cap where supported, 0.75em fallback */
+  block-size: 0.75em;
+  block-size: 1cap;
+}
+
+
+/* ==========================================================================
+   Part 13: The Imposter
+   Absolutely centered overlay within a positioned parent.
+   ========================================================================== */
+
+imposter {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* Contain within parent boundaries */
+imposter[contain] {
+  max-inline-size: calc(100% - (var(--margin, var(--el-s1)) * 2));
+  max-block-size: calc(100% - (var(--margin, var(--el-s1)) * 2));
+  overflow: auto;
+}
+
+/* Fixed positioning (viewport overlay) */
+imposter[fixed] {
+  position: fixed;
+}

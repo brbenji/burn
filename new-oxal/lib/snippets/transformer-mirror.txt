@@ -1,0 +1,10 @@
+!:
+%-  easy-transform
+|%
+++  ins
+  |=  [=pith =node]
+  `[%ins pith node]
+++  del
+  |=  =pith
+  `[%del pith]
+--

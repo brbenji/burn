@@ -1,0 +1,1390 @@
+/* goon-oxal.css — navigation and client-state affordances for Oxal views
+ *
+ * Layer split:
+ *   - Every Layout elements own structure: stack, cluster, grid, sidebar, box, shape.
+ *   - Feather classes own visual treatment: color, spacing, type size, borders.
+ *   - data-goon attributes describe navigation roles and JS-owned state.
+ *
+ * Keep this file out of base typography/chrome where possible. Selectors here
+ * should mostly reflect nav.js state, pagination, accordion/palm visibility,
+ * pending async feedback, and custom burn live-strip mechanics.
+ */
+
+html {
+  scroll-behavior: smooth;
+}
+
+.scroll-y,
+[data-goon="palm-detail"],
+[data-goon="accordion-content"] {
+  scroll-behavior: smooth;
+}
+
+/* ── Page Rhythm ──────────────────────────────────── */
+
+[data-goon="root"] {
+  --space: var(--el-s-1);
+  max-width: 64rem;
+  align-self: center;
+  overflow-anchor: none;
+}
+
+[data-goon="root-sections"] {
+  --space: var(--el-s3);
+}
+
+[data-goon="root-section"] {
+  --space: var(--el-s2);
+}
+
+[data-goon="accordion-shell"] {
+  --space: var(--el-s-2);
+}
+
+[data-goon="palm-layout"] {
+  --space: var(--el-s0);
+}
+
+[data-goon="palm-list"] {
+  --space: var(--el-s-1);
+  --goon-cover-size: var(--min, 9rem);
+  --goon-cover-max: 12rem;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(min(var(--goon-cover-size), 100%), min(var(--goon-cover-size), var(--goon-cover-max)))
+  );
+  justify-content: start;
+}
+
+[data-goon="text-block"] {
+  --space: var(--el-s-2);
+}
+
+[data-goon="actions"] {
+  --space: var(--el-s-1);
+}
+
+/* ── Prose Gaps ─────────────────────────────────────
+ * Feather styles direct .prose children for blockquote/pre/code. Goon output
+ * can produce prose-ish fragments without .prose, and inline code or code
+ * nested inside blockquotes is not covered by .prose > code. Keep small
+ * renderer-level normalizations here as those gaps appear.
+ */
+
+blockquote {
+  margin-inline: 0;
+  padding-inline-start: var(--s3);
+  border-inline-start: 2px solid var(--b3);
+  color: var(--f2);
+}
+
+/* ── Cards ────────────────────────────────────────── */
+
+/* Defensive: let cluster items shrink rather than overflow at narrow widths. */
+[data-goon="card"] [data-goon="actions"] > * {
+  min-inline-size: 0;
+}
+
+[data-goon="card"] [data-goon="actions"]:empty {
+  display: none;
+}
+
+/* ── Actions (verbs — colored) ────────────────────── */
+
+/* Empty action clusters (no buttons) — hide the border */
+[data-goon="actions"]:empty {
+  display: none;
+}
+
+[data-goon="action"] {
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+[data-goon="action"]:hover {
+  background: var(--b3);
+}
+
+[data-goon="action"][data-goon-play]:hover {
+  filter: brightness(1.1);
+}
+
+[data-goon="action-destructive"] {
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+
+[data-goon="action-destructive"]:hover {
+  opacity: 0.85;
+}
+
+[data-goon-nav="active"] [data-goon="action-destructive"][data-goon-active-visual] {
+  color: var(--f-1);
+  outline-color: var(--f-1);
+}
+
+/* ── Fields (verbs — interactive) ─────────────────── */
+
+[data-goon="field"] {
+  transition: border-color 120ms ease;
+}
+
+[data-goon="field"]:focus {
+  border-color: var(--f-4);
+  outline: none;
+}
+
+/* ── Links (verbs — clickable URLs) ─────────────────── */
+
+[data-goon="link"] {
+  transition: text-decoration-color 120ms ease;
+  word-break: break-all;
+}
+
+[data-goon="link"]:hover {
+  text-decoration-color: var(--f-4);
+}
+
+a[data-goon="link"][data-goon-native="download"] {
+  text-decoration: none;
+  cursor: pointer;
+  transition: filter 120ms ease;
+  word-break: normal;
+}
+
+a[data-goon="link"][data-goon-native="download"]:hover {
+  filter: brightness(1.1);
+  text-decoration: none;
+}
+
+.goon-auth-pending form[action="/~/login"] button[type="submit"] {
+  animation: requestPulse 2s ease-out infinite;
+}
+
+.burn-pass-modal {
+  visibility: hidden;
+  pointer-events: none;
+  transition: visibility 0s linear 140ms;
+}
+
+.burn-pass-modal.is-open {
+  visibility: visible;
+  pointer-events: auto;
+  transition: visibility 0s;
+}
+
+.burn-pass-modal .burn-pass-backdrop {
+  transition: opacity 140ms ease-out;
+}
+
+.burn-pass-modal:not(.is-open) .burn-pass-backdrop {
+  opacity: 0;
+}
+
+.burn-pass-modal > imposter {
+  overflow: visible;
+}
+
+.burn-pass-modal > imposter > box {
+  transform: scale(0.98);
+  opacity: 0;
+  transition: transform 140ms ease-out,
+              opacity 140ms ease-out;
+}
+
+.burn-pass-modal.is-open > imposter > box {
+  transform: scale(1);
+  opacity: 1;
+}
+
+/* ── Forms (inline action wrappers) ───────────────── */
+
+[data-goon="form"] {
+  display: inline;
+}
+
+[data-goon="form"] > :is(cluster, stack, box) {
+  inline-size: fit-content;
+  max-inline-size: 100%;
+}
+
+/* ── Tabs (alternative-view siblings at depth 1) ──── */
+/* When 3+ depth-1 sections detected, render as tab bar
+ * with lateral navigation instead of vertical stack.    */
+
+[data-goon="tab-bar"] {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--b3);
+  margin-block-end: var(--el-s0);
+}
+
+[data-goon="tab"] {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  padding: 0.5rem 1rem;
+  font: inherit;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--f3);
+  cursor: pointer;
+  transition: color 120ms ease-out,
+              border-color 120ms ease-out;
+}
+
+[data-goon="tab"]:hover {
+  color: var(--f1);
+}
+
+[data-goon="tab"][data-goon-tab-active="true"] {
+  color: var(--f-4);
+  border-bottom-color: var(--f-4);
+  font-weight: 600;
+}
+
+/* Focused tab in keyboard nav */
+[data-goon="tab"][data-goon-active-visual] {
+  outline: 1px solid var(--f-4);
+  outline-offset: -2px;
+  border-radius: 0.25rem 0.25rem 0 0;
+}
+
+[data-goon="tab-panel"] {
+  display: none;
+}
+
+[data-goon="tab-panel"][data-goon-tab-active="true"] {
+  display: block;
+}
+
+/* ── Miller Columns ─────────────────────────────────── */
+
+[data-goon="columns"] {
+  display: flex;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--b3);
+  border-radius: 0.375rem;
+  min-height: 24rem;
+  max-width: 100%;
+  width: 100%;
+}
+
+[data-goon="column"] {
+  flex: 0 0 33.333%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border-right: 1px solid var(--b3);
+  padding: 0;
+  min-width: 0;
+}
+
+[data-goon="column"] * {
+  overflow-wrap: break-word;
+  word-break: break-word;
+  min-width: 0;
+}
+
+[data-goon="column"]:last-child {
+  border-right: none;
+}
+
+[data-goon="column"][data-goon-column-role="parent"] {
+  background: var(--b1);
+}
+
+[data-goon="column"][data-goon-column-role="current"] {
+  background: var(--b0);
+}
+
+[data-goon="column"][data-goon-column-role="preview"] {
+  background: var(--b1);
+  padding: var(--el-s-1);
+}
+
+[data-goon="column-item"] {
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--b2);
+  color: var(--f2);
+  font-size: 0.9375rem;
+  transition: background-color 80ms ease-out;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-goon="column-item"]:hover {
+  background: var(--b2);
+}
+
+[data-goon="column-item"][data-goon-active-visual] {
+  background: var(--b-4);
+  color: var(--f0);
+  font-weight: 600;
+}
+
+[data-goon="column-item"][data-goon-column-selected="true"] {
+  background: var(--b2);
+  color: var(--f0);
+  font-weight: 500;
+}
+
+/* Arrow indicator for items with children */
+[data-goon="column-item"][data-goon-children]:not([data-goon-children="0"])::after {
+  content: "›";
+  color: var(--f3);
+  font-size: 1.1em;
+}
+
+/* ── Palm (preview sidebar for homogeneous lists) ──── */
+
+[data-goon="palm-layout"] {
+  /* sidebar primitive handles the two-panel split */
+  --sidebar-width: 12rem;
+  --sidebar-gap: var(--el-s0);
+  align-items: flex-start;
+}
+
+[data-goon="palm-list"] {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+[data-goon="palm-item"] {
+  cursor: pointer;
+  transition: background-color 100ms ease-out,
+              color 100ms ease-out;
+}
+
+/* Phase 0: 2-line height. line-height inherits from the global scale; box-sizing: content-box
+   undoes the feather-1 border-box reset so 2lh is content area, not content+padding. */
+[data-goon="palm-item"]:not(.goon-cover) {
+  box-sizing: content-box;
+  height: 2lh;
+  overflow: hidden;
+}
+
+[data-goon="palm-item"]:hover {
+  background: var(--b2);
+}
+
+[data-goon="palm-item"][data-goon-palm-active="true"] {
+  background: var(--b2);
+}
+
+[data-goon="palm-item"][data-goon-active-visual] {
+  background: var(--b2);
+}
+
+/* ── Palm cover cards ──────────────────────────── */
+
+/* Zero padding on cover items; media sizing is handled by ;shape. */
+[data-goon="palm-item"].goon-cover {
+  background: none;
+  border-radius: var(--s3);
+  --goon-active-width: 2px;
+  --goon-active-offset: 0;
+  --goon-active-radius: var(--s3);
+}
+
+[data-goon="palm-item"].goon-cover:hover {
+  background: none;
+  transform: translateY(-2px);
+  transition: transform 150ms ease-out;
+}
+
+.goon-cover shape {
+  position: relative;
+  inline-size: 100%;
+  border-radius: inherit;
+  overflow: hidden;
+  --goon-active-width: 2px;
+  --goon-active-offset: 0;
+  --goon-active-radius: var(--s3);
+}
+
+.goon-cover img {
+  border-radius: inherit;
+}
+
+/* Label overlaid on poster with gradient */
+.goon-cover-label {
+  inline-size: auto;
+  block-size: auto;
+  object-fit: initial;
+  padding: 0 0.5rem 0.375rem;
+  background: none;
+  border-end-start-radius: inherit;
+  border-end-end-radius: inherit;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  color: #e0e0e0;
+  z-index: 1;
+}
+
+.goon-cover shape::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  block-size: 45%;
+  background: linear-gradient(to top, rgba(0,0,0,0.8) 0%, transparent 100%);
+  border-end-start-radius: inherit;
+  border-end-end-radius: inherit;
+  pointer-events: none;
+}
+
+[data-goon="palm-item"][data-goon-palm-active="true"].goon-cover {
+  background: none;
+}
+
+[data-goon="palm"] {
+  /* Steady palm: reserve a tall-enough box so the right pane doesn't
+   * resize as the cursor walks the list and active panels swap. Tuned
+   * empirically — covers label + info + download + act-forms + a few
+   * recursive inner rows. Tall content overflows naturally (the
+   * surrounding page scrolls); short content sits inside this box. */
+  min-height: 16rem;
+}
+
+[data-goon="palm-detail"] {
+  display: none;
+}
+
+[data-goon="palm-detail"][data-goon-palm-active="true"] {
+  display: block;
+  min-block-size: 0;
+}
+
+/* ── Palm-detail slot grid (Library Browser archetype L143-156) ────
+ * Vertical-static layout — sibling navigation never reflows because
+ * every slot reserves its space via fixed-height clamps. The JRPG
+ * "not goon" rule. Slots are emitted by the renderer as
+ * <span data-slot="title|tagline|meta|summary|media|actions"> children
+ * of the data-goon="card" inside palm-detail. Empty slots stay in
+ * layout via [data-slot]:empty { visibility: hidden }. */
+[data-goon="palm-detail"][data-goon-palm-active="true"] > [data-goon="card"] {
+  display: grid;
+  grid-template-columns: 9rem 1fr;
+  grid-template-areas:
+    "media   text"
+    "actions actions";
+  column-gap: var(--el-s0, 1rem);
+  row-gap: var(--el-s-2, 0.25rem);
+  padding: var(--el-s-1, 0.5rem);
+}
+
+[data-goon="palm-detail"][data-goon-palm-active="true"] > [data-goon="card"].goon-text-card {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "text";
+}
+
+[data-goon="palm-detail"] [data-slot="media"] {
+  grid-area: media;
+  inline-size: 9rem;
+  align-self: start;
+  justify-self: start;
+  display: block;
+}
+
+[data-goon="palm-detail"] [data-slot="media"] > shape {
+  justify-content: flex-start;
+  align-items: flex-start;
+}
+
+/* text-block is a real grid item so [data-goon-active] can outline it.
+ * Inner spans stack as a flex column; per-slot clamps preserve the
+ * vertical-static height contract (title 2lh, tagline 1lh, meta 2.3lh,
+ * summary 5 lines). */
+[data-goon="palm-detail"] [data-slot="text"] {
+  grid-area: text;
+  min-width: 0;
+}
+
+[data-goon="palm-detail"] [data-slot="title"] {
+  min-height: 2lh;
+  line-height: 1.2;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+[data-goon="palm-detail"] [data-slot="tagline"] {
+  height: 1lh;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+}
+
+[data-goon="palm-detail"] [data-slot="meta"] {
+  height: 2.3lh;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+[data-goon="palm-detail"] [data-slot="summary"] {
+  height: calc(5 * 1.5em);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+}
+
+[data-goon="palm-detail"] .goon-text-card [data-slot="summary"] {
+  height: calc(7 * 1.5em);
+  position: relative;
+  display: block;
+  -webkit-line-clamp: unset;
+  -webkit-box-orient: initial;
+}
+
+[data-goon="palm-detail"] .goon-text-card [data-slot="summary"]::after {
+  content: "...";
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline-end: 0;
+  padding-inline-start: var(--el-s2);
+  color: var(--f4);
+  font-weight: 700;
+  background: linear-gradient(90deg, transparent, var(--b1) 45%);
+}
+
+[data-goon="palm-detail"] .goon-text-card [data-slot="text"] {
+  --space: var(--el-s-1);
+}
+
+[data-goon="palm-detail"] .goon-text-card [data-slot="title"] {
+  min-height: auto;
+}
+
+[data-goon="palm-detail"] > [data-goon="article-full"] {
+  display: none;
+}
+
+[data-goon="palm-detail"] > [data-goon="article-full"][data-goon-active] {
+  display: block;
+  animation: goon-slide-from-right 120ms ease-out;
+}
+
+[data-goon="palm-detail"]:has(> [data-goon="article-full"][data-goon-active]) > [data-goon="card"] {
+  display: none;
+}
+
+[data-goon="palm-detail"] [data-slot="actions"] {
+  grid-area: actions;
+}
+
+[data-goon="palm-detail"] reel[data-slot="actions"] {
+  overflow-x: scroll;
+  scrollbar-color: var(--f5, #888) var(--b1, #fff);
+}
+
+[data-goon="palm-detail"] reel[data-slot="actions"]::-webkit-scrollbar {
+  height: 12px;
+}
+
+[data-goon="palm-detail"] reel[data-slot="actions"]::-webkit-scrollbar-track {
+  background-color: var(--b1, #fff);
+  border-radius: var(--s3);
+}
+
+[data-goon="palm-detail"] reel[data-slot="actions"]::-webkit-scrollbar-thumb {
+  background-color: var(--f5, #888);
+  border: 3px solid var(--b1, #fff);
+  border-radius: 999px;
+  background-clip: content-box;
+}
+
+[data-goon="palm-detail"] reel[data-slot="actions"]::-webkit-scrollbar-thumb:hover {
+  background-color: var(--f5, #888);
+}
+
+[data-goon="palm-detail"] [data-slot]:empty {
+  visibility: hidden;
+}
+
+/* ── Palm drill swap ──
+ * A [data-goon="palm-stage"] wraps N+1 sibling palm-layouts: the primary
+ * palm-layout (data-palm-id="primary") plus one per loaded drill target.
+ * Only the .palm-active child is visible; nav.js toggles the class via
+ * [data-goon="palm-back"] / Escape / Left-from-palm-list. The
+ * :not([data-active-palm]) fallback shows the primary pane on first
+ * paint AND whenever the server's SSE morph strips the attribute,
+ * so the brief window between morph and nav.js restore is never
+ * visibly empty. */
+[data-goon="palm-stage"] > [data-palm-id] {
+  display: none;
+}
+[data-goon="palm-stage"]:not([data-active-palm]) > [data-palm-id="primary"],
+[data-goon="palm-stage"] > .palm-active {
+  display: block;
+}
+
+/* Drill buttons live inside the card's actions slot alongside act-form
+ * buttons, so keyboard nav reaches them as siblings of the action verbs. */
+[data-goon="drill-button"] {
+  cursor: pointer;
+  transition: background-color 100ms ease-out, border-color 100ms ease-out, opacity 100ms ease-out;
+}
+
+[data-goon="drill-button"]:hover,
+[data-goon="drill-button"]:focus-visible {
+  background: var(--b3, #333);
+  border-color: var(--f3, #888);
+  outline: none;
+}
+
+/* Legacy cluster action rows wrap; the current palm-detail multi-action
+ * path emits Every Layout reel instead so long season lists scroll
+ * horizontally without changing detail height. */
+[data-goon="palm-detail"] cluster[data-slot="actions"] {
+  flex-wrap: wrap;
+  row-gap: var(--el-s-1, 0.5rem);
+}
+
+/* Pending-drill feedback. Set via the .goon-pending class (NOT a
+ * data-* attr — Datastar's plugin walker halts on unknown data-*
+ * inside form subtrees, breaking data-on-submit; classes are inert
+ * to the walker). */
+[data-goon="drill-button"].goon-pending {
+  opacity: 0.6;
+}
+
+/* Every-Layout hygiene: flex children default to min-width: auto (= min-content),
+ * which prevents shrinking below descendants' intrinsic widths. When the sidebar
+ * wraps on narrow viewports, the side child can't collapse to viewport width and
+ * inner text/images overflow. Setting min-inline-size: 0 lets the wrap-then-shrink
+ * work as designed. Applied to palm-layout's direct children (side + content) and
+ * to palm-detail descendants so the card's inner flex rows also honor wrapping. */
+[data-goon="palm-layout"] > * {
+  min-inline-size: 0;
+}
+[data-goon="palm-detail"] * {
+  min-inline-size: 0;
+}
+
+/* ── Accordion (collapsible depth-1 sections) ──────── */
+
+[data-goon="accordion-section"] {
+  /* When scrollIntoView snaps this section to viewport top, leave a header's
+   * worth of space above so the previous neighbor (sibling accordion-header
+   * OR parent root-section's edge) stays in view. Keeps orientation anchored
+   * per the carousel design's "compact neighbors visible" goal. */
+  scroll-margin-top: 3rem;
+}
+
+[data-goon="accordion-header"] {
+  cursor: pointer;
+  transition: background-color 100ms ease-out,
+              border-color 100ms ease-out;
+}
+
+[data-goon="accordion-header"]:hover {
+  background: var(--b2);
+}
+
+/* Accordion header focus — moved after generic nav styles (see below) */
+
+
+[data-goon="accordion-arrow"] {
+  display: inline-block;
+  transition: transform 150ms ease-out;
+  font-size: 0.75rem;
+  color: var(--f3);
+}
+
+[data-goon-accordion-expanded="true"] [data-goon="accordion-arrow"] {
+  transform: rotate(90deg);
+}
+
+[data-goon="accordion-content"] {
+  /* Directional motion cue mirroring the focus 2px-right nudge:
+   *   - Expand = arrive from the right (translateX(4px) → 0)
+   *   - Collapse = depart to the left (translateX(0) → -4px)
+   * with a 150ms opacity fade. Stays under the JRPG 175ms ceiling per
+   * design_goon_oxal_css_snappiness.md. `transition-behavior: allow-discrete`
+   * + `@starting-style` carry transform/opacity across the display:none ↔
+   * display:block discrete change without losing the sweep/first-visit
+   * machinery downstream code relies on. */
+  transition: transform 150ms ease-out,
+              opacity 150ms ease-out,
+              display 150ms ease-out allow-discrete;
+}
+
+[data-goon="accordion-content"][data-goon-accordion-expanded="false"] {
+  display: none;
+  transform: translateX(-4px);
+  opacity: 0;
+}
+
+[data-goon="accordion-content"][data-goon-accordion-expanded="true"] {
+  display: block;
+  transform: translateX(0);
+  opacity: 1;
+}
+
+/* Rightward arrival cue on first paint of the expanded state. Without
+ * @starting-style the new state would apply immediately with no anim. */
+@starting-style {
+  [data-goon="accordion-content"][data-goon-accordion-expanded="true"] {
+    transform: translateX(4px);
+    opacity: 0;
+  }
+}
+
+/* ── Keyboard Navigation (JRPG snappiness) ───────── */
+/* State changes instantly. Visuals catch up.
+ * All transitions under 175ms — the JRPG threshold.
+ * Focus styles only appear when nav is active.        */
+
+/* Active node — structural selection ring. Keep this visually neutral:
+ * no fill, no fixed radius. Component rules add radius only where needed. */
+[data-goon-nav="active"] [data-goon-active-visual] {
+  outline: var(--goon-active-width, 1px) solid var(--f-4);
+  outline-offset: var(--goon-active-offset, 2px);
+  transform: translateX(2px);
+  transition: outline-color 100ms ease-out,
+              transform 120ms ease-out;
+}
+
+[data-goon-nav="active"] [data-goon-active-visual]:is(.bd1, .bd2, .bd3) {
+  border-color: var(--f-4);
+  outline: none;
+  transition: border-color 100ms ease-out,
+              transform 120ms ease-out;
+}
+
+[data-goon-nav="active"] [data-goon-active-visual]:is(button, a, input, select, textarea):not(.bd1):not(.bd2):not(.bd3) {
+  border-radius: var(--s1);
+}
+
+[data-goon-nav="active"] [data-goon-active-visual]:not(button, a, input, select, textarea):not(.bd1):not(.bd2):not(.bd3) {
+  border-radius: var(--goon-active-radius, var(--s2));
+}
+
+[data-goon-nav="active"] [data-goon="header"][data-goon-active-visual],
+[data-goon-nav="active"] [data-goon="root-section"][data-goon-active-visual] {
+  --goon-active-offset: 4px;
+  border-radius: var(--s1);
+}
+
+/* Accordion header focus — blue bottom-border underline.
+ * Placed after generic nav styles so specificity wins.
+ * Header only has border-bottom, so border-color turns just that blue. */
+[data-goon-nav="active"] [data-goon="accordion-header"][data-goon-active-visual] {
+  outline: none;
+  border-color: var(--f-4);
+  transform: none;
+}
+
+[data-goon="accordion-header"] [data-goon="accordion-label"] {
+  transition: transform 120ms ease-out;
+}
+
+[data-goon-nav="active"] [data-goon="accordion-header"][data-goon-active-visual] [data-goon="accordion-label"] {
+  transform: translateX(2px);
+}
+
+[data-goon-nav="active"] [data-goon-active-visual]:is(input, select, textarea),
+[data-goon-nav="active"] [data-goon="card"][data-goon-active-visual],
+[data-goon-nav="active"] [data-goon="article-full"][data-goon-active-visual],
+[data-goon-nav="active"] .burn-pass-modal [data-goon-active-visual] {
+  transform: none;
+}
+
+/* Depth transitions — directional slide on drill-in/back-out */
+[data-goon-entering="deeper"] {
+  animation: goon-slide-from-right 120ms ease-out;
+}
+
+[data-goon-entering="shallower"] {
+  animation: goon-slide-from-left 120ms ease-out;
+}
+
+@keyframes goon-slide-from-right {
+  from { opacity: 0.7; transform: translateX(8px); }
+  to   { opacity: 1;   transform: translateX(0); }
+}
+
+@keyframes goon-slide-from-left {
+  from { opacity: 0.7; transform: translateX(-8px); }
+  to   { opacity: 1;   transform: translateX(0); }
+}
+
+/* Palm preview panel — opacity blink on content swap */
+[data-goon="palm"] {
+  transition: opacity 100ms ease-out;
+}
+
+[data-goon="palm"][data-goon-updating] {
+  opacity: 0.6;
+}
+
+/* ── Viewport Pagination ───────────────────────────── */
+
+/* Lock container height so partial last pages don't shift controls.
+ * --goon-page-height is set per-palm by nav.js setupPagination from
+ * the container's own measured scrollHeight (after first paginateTo).
+ * Each palm gets its own correct envelope — cover grids stay cover-
+ * sized, episode lists stay line-sized; no shared-height bleed.
+ * Switch from lobotomized owl (margin) to gap for inter-item spacing —
+ * gap ignores display:none siblings, preventing page-flip margin shift. */
+[data-goon-paginate] {
+  min-height: var(--goon-page-height);
+  gap: var(--el-s0, 1rem);
+}
+
+/* Zero out the owl margins that fire across hidden siblings */
+[data-goon-paginate] > * + * {
+  margin-block-start: 0;
+}
+
+[data-goon="page-controls"] {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-block-start: 0.5rem;
+  border-block-start: 1px solid var(--b2, #e0e0e0);
+  margin-block-start: 0.5rem;
+}
+
+[data-goon-page-action] {
+  font-size: 0.8125rem;
+  padding: var(--s2) var(--s4);
+  cursor: pointer;
+  background: var(--b1, #f5f5f5);
+  border: 0;
+  color: var(--f1, #333);
+  border-radius: var(--s2);
+}
+
+[data-goon-page-action]:hover {
+  background: var(--b2, #e0e0e0);
+}
+
+/* ── Video Player (palm drill-in) ───────────────── */
+/* Three-level zoom: grid → expanded overlay → fullscreen.
+ * Pure JS — no tree writes, no SSE, no morph.           */
+
+/* ── Palm drill-in video player (Level 2: expanded, Level 3: fullscreen) ── */
+
+/* Video container — replaces poster <shape> in palm detail */
+[data-goon="player-video-wrap"] {
+  position: relative;
+  float: left;
+  margin-right: var(--el-s0);
+  max-width: 6rem;
+  background: #000;
+  border-radius: 0.25rem;
+  overflow: hidden;
+}
+
+[data-goon="player-video-wrap"] video {
+  width: 100%;
+  display: block;
+}
+
+/* Play button overlay on paused video (Level 2) */
+[data-goon="player-play-overlay"] {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+[data-goon="player-play-overlay"]:hover {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+[data-goon="player-play-overlay"] span {
+  font-size: 2rem;
+  color: #fff;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+}
+
+/* Player-active palm detail — subtle highlight */
+[data-goon="palm-detail"][data-goon-player-active] {
+  outline: 2px solid var(--f-4);
+  outline-offset: -2px;
+}
+
+/* Level 2: expand video wrap to fill detail panel width */
+[data-goon="palm-detail"][data-goon-player-active] [data-goon="player-video-wrap"] {
+  float: none;
+  max-width: none;
+  margin-right: 0;
+  border-radius: 0.25rem;
+}
+
+/* Fullscreen state (Level 3) — imposter takes over viewport */
+[data-goon="palm-detail"][data-goon-player-fullscreen] {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  animation: goon-fade-in 150ms ease-out;
+}
+
+@keyframes goon-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+[data-goon="palm-detail"][data-goon-player-fullscreen] [data-goon="player-video-wrap"] {
+  float: none;
+  max-width: none;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  border-radius: 0;
+}
+
+[data-goon="palm-detail"][data-goon-player-fullscreen] [data-goon="player-video-wrap"] video {
+  width: 100%;
+  max-height: 100vh;
+  object-fit: contain;
+}
+
+/* In fullscreen: hide action bar, label, and card chrome */
+[data-goon="palm-detail"][data-goon-player-fullscreen] [data-goon="action-bar"] {
+  display: none;
+}
+
+[data-goon="palm-detail"][data-goon-player-fullscreen] [data-goon="label"] {
+  display: none;
+}
+
+[data-goon="palm-detail"][data-goon-player-fullscreen] [data-goon="card"] {
+  background: #000;
+  border: none;
+  padding: 0;
+}
+
+/* Hide play overlay when video is playing */
+[data-goon="player-play-overlay"][hidden] {
+  display: none;
+}
+
+/* Paginated-accordion frame: no CSS-imposed height. The palm itself
+ * (data-goon-paginate container) carries its own --goon-page-height
+ * set by nav.js setupPagination — per-palm measurement. The accordion-
+ * section auto-sizes to its content; scrollIntoView({block:'start'})
+ * on expand puts each opened palm at the same viewport y position. */
+
+/* ─── BURN LIVE STRIP ──────────────────────────────────────────────
+ * "Downloading" status strip — first child of root-sections inside
+ * #goon-root. Absent from DOM when no download is active; vine
+ * prepends it via +render-frozen on each /goon fact when has-dl.
+ * nav.js computes --burn-bps from emitted-byte deltas and triggers
+ * the ames-chunk glyph animation when received/seq advances.
+ */
+
+#status-live:empty {
+  display: none;
+}
+
+#status-live {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  padding-block: var(--s3);
+  background: var(--b2);
+  border-block-end: 1px solid var(--b3);
+  border-radius: var(--s3);
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+}
+
+.burn-strip-header {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--f2);
+}
+
+/* Cover + metadata row under the header. Structure comes from ;cluster
+ * and the bytes/elapsed pair from ;stack in the vine. */
+.burn-strip-cover-row {
+  align-items: center;
+}
+
+.burn-strip-art {
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.burn-strip-art > shape,
+.burn-strip-cover-row > shape {
+  --goon-cover-size: var(--min, 9rem);
+  --goon-cover-max: 12rem;
+  inline-size: clamp(var(--goon-cover-size), 12vw, var(--goon-cover-max));
+  flex: 0 0 auto;
+}
+
+.burn-strip-art > .burn-context-thumb {
+  inline-size: clamp(3rem, 4vw, 4rem);
+}
+
+.burn-strip-art > .burn-context-thumb > img,
+.burn-strip-art > .burn-main-thumb > img {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  object-fit: contain;
+}
+
+.burn-strip-art > .burn-context-thumb > img {
+  border-radius: var(--s2);
+  opacity: 0.4;
+}
+
+.burn-strip-title {
+  flex: 1;
+  min-width: 12rem;
+}
+
+.burn-strip-breadcrumb {
+  color: var(--f3);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.burn-strip-item {
+  color: var(--f2);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.burn-strip-bytes {
+  color: var(--f5);
+  font-variant-numeric: tabular-nums;
+}
+
+.burn-strip-stats {
+  align-items: flex-end;
+  margin-inline-start: auto;
+}
+
+/* Elapsed duration slot. nav.js ticks this once per second while active
+ * and freezes the final duration when data-completed="true" arrives. */
+.burn-strip-elapsed {
+  color: var(--f6);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.burn-strip-elapsed:empty {
+  display: none;
+}
+
+.burn-ship-pct {
+  color: var(--f5);
+  font-variant-numeric: tabular-nums;
+}
+
+.burn-group {
+  box-sizing: border-box;
+  inline-size: 14rem;
+  max-inline-size: 100%;
+}
+
+/* Outline the plex-server entity so it reads as a discrete unit —
+ * the local "host machine" identity, distinct from proxy. */
+.burn-plex {
+  border-radius: var(--s2);
+  padding: var(--s3) var(--s4);
+  min-width: 3.75rem;
+  text-align: left;
+}
+
+.burn-group-local > cluster {
+  flex-wrap: nowrap;
+}
+
+/* Show/movie poster in the ship box — replaces the @p ship label when
+ * burn knows the library item's thumb URL (HOST downloads only;
+ * subscriber downloads fall back to text). Sized to fit the strip's
+ * line height without dominating the layout. */
+.burn-ship-cover {
+  display: block;
+  border-radius: var(--s2);
+}
+
+/* The pipe is a ;switcher — flips to vertical stacking below the
+ * threshold without any media query. Segments override switcher's
+ * default flex-grow:1 since they're separators, not equal-weight
+ * children. */
+.burn-strip-pipe {
+  justify-content: center;
+  align-items: center;
+}
+
+.burn-strip-pipe > .burn-segment {
+  flex-grow: 0;
+}
+
+.burn-entity-name {
+  font-weight: 600;
+  color: var(--f2);
+  font-size: 0.8rem;
+  line-height: 1.1;
+}
+
+.burn-entity-sub {
+  color: var(--f6);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.burn-entity-dot {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--f5);
+}
+
+/* proxy "requesting" dot is event-driven only: nav.js adds
+ * .burn-proxy-tick on relay-side chunk progress. No continuous
+ * animation — at rest the dot is static, matching the truth that no
+ * Iris GET is known to be completing at that moment. */
+.burn-proxy .burn-entity-dot.burn-proxy-tick {
+  animation: burn-pulse 0.6s ease-out;
+}
+
+@keyframes burn-pulse {
+  0%   { opacity: 0.3; transform: scale(0.9); }
+  50%  { opacity: 1.0; transform: scale(1.3); }
+  100% { opacity: 0.6; transform: scale(1.0); }
+}
+
+/* Segments between entities. Three flavors:
+ *   .burn-segment-line    — short solid hairline plex↔proxy. No
+ *                            label, no animation; communicates the
+ *                            local-pair relationship visually.
+ *   .burn-segment-ames    — proxy↔relay. nav.js adds .burn-ames-tick
+ *                            when received/seq advances to fire a
+ *                            one-shot chunk glyph. At rest, no glyph
+ *                            is rendered.
+ *   .burn-segment-trickle — relay↔ship. Chevrons whose duration scales
+ *                            with --burn-bps (kilobytes/sec EWMA
+ *                            written by nav.js). nav.js drops
+ *                            --burn-bps back to 0 shortly after each
+ *                            emitted-byte tick.
+ */
+.burn-segment {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 5rem;
+}
+
+.burn-segment-label {
+  color: var(--f6);
+  font-size: 0.7rem;
+  text-transform: lowercase;
+}
+
+/* Short solid line for the local plex↔proxy pair lives INSIDE
+ * burn-group-local. Tighter than other segments to communicate the
+ * pair relationship. */
+.burn-group-local .burn-segment-line {
+  min-width: 0.5rem;
+}
+
+.burn-segment-line::before {
+  content: "";
+  display: block;
+  inline-size: 0.75rem;
+  block-size: 2px;
+  background: var(--f7);
+}
+
+.burn-ames-chunks {
+  position: relative;
+  width: 100%;
+  height: 1.35rem;
+  overflow: hidden;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    var(--b3) 20%,
+    var(--b3) 80%,
+    transparent 100%);
+  border-radius: 2px;
+}
+
+/* Single one-shot chunk glyph fired by nav.js on received/seq advance.
+ * No content rendered at rest — the strip is silent when no chunk
+ * has just arrived. */
+.burn-ames-chunks.burn-ames-tick::before {
+  content: "■";
+  position: absolute;
+  top: 50%;
+  color: var(--f-4);
+  font-size: 1.25rem;
+  animation: burn-ames-chunk-pop 0.75s linear;
+}
+
+@keyframes burn-ames-chunk-pop {
+  0%   { left: 0;    transform: translateY(-50%) scale(1.45); opacity: 1; }
+  100% { left: 100%; transform: translateY(-50%) scale(1.0); opacity: 0.65; }
+}
+
+.burn-chevrons {
+  position: relative;
+  width: 100%;
+  height: 1rem;
+  overflow: hidden;
+  background: var(--b1);
+  border-radius: 2px;
+  /* --burn-bps default: 0 => animation paused. nav.js overrides on
+   * emitted-byte ticks. The duration formula maps higher bps to shorter
+   * (faster) animation duration; clamped to [0.4s, 4s]. */
+  --burn-bps: 0;
+  --burn-chevron-duration: clamp(0.4s, calc(8s / (var(--burn-bps) + 1)), 4s);
+}
+
+.burn-chevrons::before {
+  content: "▶ ▶ ▶ ▶ ▶ ▶ ▶ ▶ ▶ ▶ ▶ ▶";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  color: var(--f-3);
+  font-size: 0.85rem;
+  letter-spacing: 0.1em;
+  animation: burn-trickle var(--burn-chevron-duration) linear infinite;
+  animation-play-state: running;
+}
+
+/* If --burn-bps is 0 (no recent ticks), pause the animation to
+ * communicate "stalled". nav.js bumps --burn-bps off zero whenever
+ * a morph arrives. */
+.burn-chevrons[style*="--burn-bps: 0"]::before {
+  animation-play-state: paused;
+  opacity: 0.3;
+}
+
+.burn-chevrons.burn-trickle-tick::before {
+  animation-play-state: running !important;
+  opacity: 1 !important;
+}
+
+@keyframes burn-trickle {
+  0%   { transform: translate(-25%, -50%); }
+  100% { transform: translate(25%, -50%); }
+}
+
+/* Progress bars. The ship bar is emitted/total. nav.js takes ownership
+ * of the relay bar after first paint and turns it into byte-reserve
+ * fullness: received - emitted, relative to the largest reserve seen
+ * for the current rid. */
+.burn-bar {
+  width: 10rem;
+  height: 0.65rem;
+  background: var(--b3);
+  border-radius: 999px;
+  overflow: hidden;
+  --burn-bar-pct: 0;
+}
+
+.burn-bar-fill {
+  height: 100%;
+  width: var(--burn-bar-width, calc(var(--burn-bar-pct) * 1%));
+  background: var(--f-4);
+  border-radius: inherit;
+  transition: width 0.45s ease-out;
+}
+
+.burn-relay .burn-bar-fill {
+  background: var(--f-4);
+}
+
+.burn-relay.burn-reserve-active .burn-bar {
+  box-shadow: 0 0 0 1px var(--f-4) inset;
+}
+
+.burn-ship .burn-bar-fill {
+  background: var(--f-3); /* emerald for monotonic progress */
+}
+
+.burn-relay.burn-reserve-empty .burn-entity-sub {
+  color: var(--f-2);
+}
+
+.burn-relay.burn-reserve-empty .burn-bar {
+  outline: 1px solid var(--f-2);
+  outline-offset: 2px;
+}
+
+/* Completion state — vine adds data-completed="true" on #status-live
+ * when emitted == total. Halts every motion: chevrons paused (also
+ * dimmed via opacity), and ames-tick + proxy-tick are suppressed by
+ * nav.js so no fresh one-shot animations fire. Belt-and-suspenders
+ * pause rules below cover the edge case where a final tick was
+ * mid-animation when completion arrived. */
+#status-live[data-completed="true"] .burn-chevrons::before,
+#status-live[data-completed="true"] .burn-ames-chunks.burn-ames-tick::before,
+#status-live[data-completed="true"] .burn-proxy .burn-entity-dot.burn-proxy-tick {
+  animation-play-state: paused;
+  opacity: 0.5;
+}
+
+/* Cancel + clear-all wrapped in ;cluster so they always have a real
+ * gap between them (no longer touching). The individual forms keep
+ * .burn-strip-action as a marker class; the cluster itself owns the
+ * gap via --space. */
+.burn-strip-actions:empty {
+  display: none;
+}
+
+.burn-strip-action button {
+  background: transparent;
+  border: 1px solid var(--f7);
+  color: var(--f4);
+  padding: var(--s2) var(--s4);
+  border-radius: var(--s2);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.75rem;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.burn-strip-action button:hover {
+  border-color: var(--f-1);
+  color: var(--f-1);
+}
+
+[data-goon-nav="active"] .burn-strip-action button[data-goon="action-destructive"][data-goon-active-visual] {
+  border-color: var(--f-1);
+  color: var(--f-1);
+  outline-color: var(--f-1);
+}

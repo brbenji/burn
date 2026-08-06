@@ -1,0 +1,69 @@
+|_  [our=@p name=@tas]
+::
+++  forms  (silt ~[/[name]/raw])
+::
+++  load
+  |=  =prior-forms
+  =/  raw       /[name]/raw
+  =/  rendered  /[name]/rendered
+  =/  toc       /[name]/toc
+  :_  *move
+  ^-  (map stem view-spec)
+  %-  malt
+  :~  [raw `view-spec`[%form ~]]
+      :-  rendered  :-  %lens
+        ^-  lens-spec
+        %*  .  *lens-spec
+          dep  [our raw]
+          sauc
+            '''
+            !:
+            %-  easy-transform
+            |%
+            ++  ins
+              |=  [=pith =node]
+              ^-  (unit chng)
+              ?.  ?=([%t *] node)  ~
+              =/  =(each manx tang)
+                %-  mule  |.
+                !<  manx
+                (slap !>(.) (ream t.node))
+              :-  ~
+              :+  %ins  pith
+              ?:  ?=(%.y -.each)  manx+p.each
+              tang+p.each
+            ++  del
+              |=  =pith
+              `[%del pith]
+            --
+            '''
+        ==
+      :-  toc  :-  %lens
+        ^-  lens-spec
+        %*  .  *lens-spec
+          dep  [our rendered]
+          sauc
+            '''
+            !:
+            |=  [data snap=data mov=move *]
+            ^-  (set chng)
+            %-  silt
+            :_  ~
+            :+  %ins  /
+            :-  %manx
+            ;div
+              ;*
+              %+  murn  ~(tap do snap)
+              |=  [=pith =node]
+              ?.  ?=  [%manx *]  node  ~
+              :-  ~
+              ;div
+                ;-  (pate pith)
+              ==
+            ==
+            '''
+        ==
+  ==
+::
+++  drop  |=(=prior-forms *move)
+--

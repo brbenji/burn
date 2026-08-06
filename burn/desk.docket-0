@@ -1,0 +1,10 @@
+:~
+  title+'Burn'
+  info+'Hash-verified peer-to-peer media sharing — Hoon Native UI edition.'
+  color+0xff.6b35
+  version+[0 1 0]
+  website+'https://havdys.bird.art/new-oxal/plex'
+  license+'MIT'
+  image+'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f3/CD_icon.svg/1920px-CD_icon.svg.png'
+  site+/apps/burn
+==

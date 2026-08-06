@@ -1,0 +1,11 @@
+!:
+%-  easy-transform
+|%
+++  ins
+  |=  [=pith =node]
+  ?.  ?=([%ud *] node)  ~
+  `[%ins pith ud+(mul 2 ud.node)]
+++  del
+  |=  =pith
+  `[%del pith]
+--
