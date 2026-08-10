@@ -322,7 +322,7 @@
     =data-goon  "header"
     =data-goon-children  "2"
     =data-goon-prefer-child  "form,auth,link"
-    =style  "--space: var(--el-s0); justify-content: space-between; align-items: start;"
+    =style  "--space: var(--el-s0); --justify: space-between; --align: start;"
     ;stack
       =style  "--space: var(--el-s-4);"
       ;h1(class "f0 fs5 bold lh1"): Plex-share
@@ -335,8 +335,8 @@
         ; by nord bird
       ==
     ==
-    ;stack
-      =style  "--space: var(--el-s-2); align-items: flex-end;"
+    ;stack.tr
+      =style  "--space: var(--el-s-2); align-items: flex-end; margin-inline-start: auto;"
       ;+  (render-eauth-login is-auth viewer)
       ;p(class "f1 fs-1"): {identity}
     ==
@@ -634,6 +634,7 @@
     ;body.p5
       =data-init  "@get(location.pathname)"
       =data-burn-authenticated  ?:(is-auth "true" "false")
+      =data-goon-intro  "pending"
       ;stack
         ;+  (render-passcode-modal auth-target)
         ;+  (render-frozen goad ~ viewer ours)
@@ -655,7 +656,7 @@
     ;input(type "hidden", name "redirect", value "/new-oxal/plex");
     ;input(type "hidden", name "eauth", value "");
     ;cluster
-      =style  "--space: var(--el-s-2); align-items: center;"
+      =style  "--space: var(--el-s-2); --align: center; --justify: flex-end;"
       ;span
         =data-goon  "edit-field"
         =data-goon-children  "0"

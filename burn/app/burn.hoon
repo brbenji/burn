@@ -23,7 +23,7 @@
 ::    3. Vere also closes the same stream at ~46s of inter-body silence.
 ::  Three composable mitigations:
 ::    deferred-headers — open the response only when bytes are ready
-::    octs-buffer + /dl-trickle — pace real chunk bytes every ~s30
+::    octs-buffer + /dl-trickle — pace real chunk bytes every ~s15
 ::    stream-arrivals — sweep on inactivity, not age
 ::
 ::  The trickle slice formula `slice = buf × interval / runway` is
@@ -57,7 +57,7 @@
 ::  chunk path uses (min chunk-size remaining) for max-drain dump after
 ::  Mesa stops — see /dl-trickle handler in on-arvo.
 ++  target-runway     `@dr`~h2                  ::  always keep 2h of trickle ahead
-++  trickle-interval  `@dr`~s30                 ::  emit every 30s (Vere idle-safe)
+++  trickle-interval  `@dr`~s15                 ::  emit every 15s (3x margin under Vere's 45s response generator timer)
 ++  slice-fast        `@ud`131.072              ::  128KB — final-chunk max-drain only
 ++  thumb-prefetch-delay  `@dr`~s2              ::  pace thumbnail cache warmup to reduce loom pressure
 ++  thumb-prefetch-download-delay  `@dr`~m20    ::  don't prefetch art while a browser download is active
@@ -1245,6 +1245,87 @@
       :_  this
       (handle-passcode-auth eyre-id inbound-req src.bowl)
     =/  raw-url=tape  (trip req-url)
+    ::  HTTP response debugging cheatsheet. These local-only probes are
+    ::  intentionally before the auth/download paths.
+    ::
+    ::    curl -v --raw http://127.0.0.1:80/apps/burn/debug-cl-same
+    ::      200 + content-length=5; header and body cards returned together.
+    ::
+    ::    curl -v --raw http://127.0.0.1:80/apps/burn/debug-cl-later
+    ::      200 + content-length=5; header now, body "hello" after 1s.
+    ::
+    ::    curl -v --raw http://127.0.0.1:80/apps/burn/debug-cl-206-same
+    ::      206 + content-length=5 + content-range; header/body together.
+    ::
+    ::    curl -v --raw http://127.0.0.1:80/apps/burn/debug-cl-206-later
+    ::      206 + content-length=5 + content-range; body after 1s.
+    ::
+    ::    curl -v --raw http://127.0.0.1:80/apps/burn/debug-idle-30
+    ::    curl -v --raw http://127.0.0.1:80/apps/burn/debug-idle-46
+    ::    curl -v --raw http://127.0.0.1:80/apps/burn/debug-idle-60
+    ::      200 without content-length; header now, body after N seconds.
+    ::      These test the real Vere/Eyre idle-close window.
+    ::
+    ?:  =("/apps/burn/debug-cl-same" raw-url)
+      =/  body=octs  (as-octs:mimes:html 'hello')
+      =/  rh=response-header:http
+        [200 ~[['content-type' 'text/plain'] ['content-length' '5']]]
+      ~&  >>>  "burn: DEBUG CL same eyre-id={<(short-id-ta eyre-id)>} header+data same return content-length=5 body=5"
+      :_  this
+      :~  [%give %fact ~[/http-response/[eyre-id]] %http-response-header !>(rh)]
+          [%give %fact ~[/http-response/[eyre-id]] %http-response-data !>(`(unit octs)`(some body))]
+          [%give %kick ~[/http-response/[eyre-id]] ~]
+      ==
+    ?:  =("/apps/burn/debug-cl-later" raw-url)
+      =/  rh=response-header:http
+        [200 ~[['content-type' 'text/plain'] ['content-length' '5']]]
+      ~&  >>>  "burn: DEBUG CL later eyre-id={<(short-id-ta eyre-id)>} header now content-length=5 body in 1s"
+      :_  this
+      :~  [%give %fact ~[/http-response/[eyre-id]] %http-response-header !>(rh)]
+          [%pass /debug-cl-later/[eyre-id] %arvo %b %wait (add now.bowl ~s1)]
+      ==
+    ?:  =("/apps/burn/debug-cl-206-same" raw-url)
+      =/  body=octs  (as-octs:mimes:html 'hello')
+      =/  rh=response-header:http
+        [206 ~[['content-type' 'text/plain'] ['content-length' '5'] ['content-range' 'bytes 0-4/5'] ['accept-ranges' 'bytes']]]
+      ~&  >>>  "burn: DEBUG CL 206 same eyre-id={<(short-id-ta eyre-id)>} header+data same content-length=5 content-range=bytes 0-4/5"
+      :_  this
+      :~  [%give %fact ~[/http-response/[eyre-id]] %http-response-header !>(rh)]
+          [%give %fact ~[/http-response/[eyre-id]] %http-response-data !>(`(unit octs)`(some body))]
+          [%give %kick ~[/http-response/[eyre-id]] ~]
+      ==
+    ?:  =("/apps/burn/debug-cl-206-later" raw-url)
+      =/  rh=response-header:http
+        [206 ~[['content-type' 'text/plain'] ['content-length' '5'] ['content-range' 'bytes 0-4/5'] ['accept-ranges' 'bytes']]]
+      ~&  >>>  "burn: DEBUG CL 206 later eyre-id={<(short-id-ta eyre-id)>} header now content-length=5 content-range=bytes 0-4/5 body in 1s"
+      :_  this
+      :~  [%give %fact ~[/http-response/[eyre-id]] %http-response-header !>(rh)]
+          [%pass /debug-cl-206-later/[eyre-id] %arvo %b %wait (add now.bowl ~s1)]
+      ==
+    ?:  =("/apps/burn/debug-idle-30" raw-url)
+      =/  rh=response-header:http
+        [200 ~[['content-type' 'text/plain']]]
+      ~&  >>>  "burn: DEBUG idle-30 eyre-id={<(short-id-ta eyre-id)>} header now body in 30s"
+      :_  this
+      :~  [%give %fact ~[/http-response/[eyre-id]] %http-response-header !>(rh)]
+          [%pass /debug-idle-30/[eyre-id] %arvo %b %wait (add now.bowl ~s30)]
+      ==
+    ?:  =("/apps/burn/debug-idle-46" raw-url)
+      =/  rh=response-header:http
+        [200 ~[['content-type' 'text/plain']]]
+      ~&  >>>  "burn: DEBUG idle-46 eyre-id={<(short-id-ta eyre-id)>} header now body in 46s"
+      :_  this
+      :~  [%give %fact ~[/http-response/[eyre-id]] %http-response-header !>(rh)]
+          [%pass /debug-idle-46/[eyre-id] %arvo %b %wait (add now.bowl ~s46)]
+      ==
+    ?:  =("/apps/burn/debug-idle-60" raw-url)
+      =/  rh=response-header:http
+        [200 ~[['content-type' 'text/plain']]]
+      ~&  >>>  "burn: DEBUG idle-60 eyre-id={<(short-id-ta eyre-id)>} header now body in 60s"
+      :_  this
+      :~  [%give %fact ~[/http-response/[eyre-id]] %http-response-header !>(rh)]
+          [%pass /debug-idle-60/[eyre-id] %arvo %b %wait (add now.bowl ~s60)]
+      ==
     =/  dl-web-pfx=tape  "/apps/burn/download/"
     =/  st-web-pfx=tape  "/apps/burn/stream/"
     =/  is-thumb=?
@@ -1628,6 +1709,46 @@
   ::  behn: proxy timeout sweep
   ::
       [%behn %wake *]
+    ?:  ?=([%debug-cl-later @ ~] wire)
+      =/  eid=@ta  i.t.wire
+      =/  body=octs  (as-octs:mimes:html 'hello')
+      ~&  >>>  "burn: DEBUG CL later eyre-id={<(short-id-ta eid)>} body now len=5"
+      :_  this
+      :~  [%give %fact ~[/http-response/[eid]] %http-response-data !>(`(unit octs)`(some body))]
+          [%give %kick ~[/http-response/[eid]] ~]
+      ==
+    ?:  ?=([%debug-cl-206-later @ ~] wire)
+      =/  eid=@ta  i.t.wire
+      =/  body=octs  (as-octs:mimes:html 'hello')
+      ~&  >>>  "burn: DEBUG CL 206 later eyre-id={<(short-id-ta eid)>} body now len=5"
+      :_  this
+      :~  [%give %fact ~[/http-response/[eid]] %http-response-data !>(`(unit octs)`(some body))]
+          [%give %kick ~[/http-response/[eid]] ~]
+      ==
+    ?:  ?=([%debug-idle-30 @ ~] wire)
+      =/  eid=@ta  i.t.wire
+      =/  body=octs  (as-octs:mimes:html 'hello')
+      ~&  >>>  "burn: DEBUG idle-30 eyre-id={<(short-id-ta eid)>} body now len=5"
+      :_  this
+      :~  [%give %fact ~[/http-response/[eid]] %http-response-data !>(`(unit octs)`(some body))]
+          [%give %kick ~[/http-response/[eid]] ~]
+      ==
+    ?:  ?=([%debug-idle-46 @ ~] wire)
+      =/  eid=@ta  i.t.wire
+      =/  body=octs  (as-octs:mimes:html 'hello')
+      ~&  >>>  "burn: DEBUG idle-46 eyre-id={<(short-id-ta eid)>} body now len=5"
+      :_  this
+      :~  [%give %fact ~[/http-response/[eid]] %http-response-data !>(`(unit octs)`(some body))]
+          [%give %kick ~[/http-response/[eid]] ~]
+      ==
+    ?:  ?=([%debug-idle-60 @ ~] wire)
+      =/  eid=@ta  i.t.wire
+      =/  body=octs  (as-octs:mimes:html 'hello')
+      ~&  >>>  "burn: DEBUG idle-60 eyre-id={<(short-id-ta eid)>} body now len=5"
+      :_  this
+      :~  [%give %fact ~[/http-response/[eid]] %http-response-data !>(`(unit octs)`(some body))]
+          [%give %kick ~[/http-response/[eid]] ~]
+      ==
     ::  dl-keepalive wires are absorbed as no-ops. Empty-octs keepalive
     ::  emits trigger Vere _http_hgen_send SIGSEGV; deferred-headers
     ::  and trickle-pace replaced this. Older in-flight wires from
@@ -1677,7 +1798,7 @@
         ?:  final.u.ob  (min chunk-size remaining)
         (slice-for remaining target-runway)
       ?:  =(0 use-slice)
-        ::  Sub-threshold drain (rare: buf < ~240 bytes): skip emit, just
+        ::  Sub-threshold drain (rare: buf < ~480 bytes): skip emit, just
         ::  reschedule. Better to let Vere idle-close at ~46s than ship a
         ::  zero-byte octs (SIGSEGVs Vere) or a 1-byte octs that doesn't
         ::  actually keep the browser alive.

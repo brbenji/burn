@@ -36,8 +36,8 @@
   ^-  (list goad)
   :~  (library self-src)
       (downloads s)
-      (settings s)
       (about ~)
+      (settings s)
   ==
 ::
 ::  +resolve: get source-state for a ship; bunt entry if absent.

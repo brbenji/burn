@@ -37,6 +37,22 @@ html {
   --space: var(--el-s2);
 }
 
+[data-goon-intro="pending"] [data-goon="header"] > *,
+[data-goon-intro="pending"] [data-goon="root-section"] > [data-goon="label"],
+[data-goon-intro="pending"] [data-goon="accordion-section"],
+[data-goon-intro="pending"] [data-goon="palm-item"] > shape,
+[data-goon-intro="pending"] [data-goon="palm-item"]:not(.goon-cover),
+[data-goon-intro="pending"] [data-goon="actions"],
+[data-goon-intro="pending"] [data-goon="article-full"],
+[data-goon-intro="pending"] [data-goon="palm-detail"] > [data-goon="card"] {
+  opacity: 0;
+  transform: translateY(0.35rem);
+}
+
+[data-goon-stable-region="true"] {
+  min-block-size: var(--goon-stable-block-size);
+}
+
 [data-goon="accordion-shell"] {
   --space: var(--el-s-2);
 }
@@ -458,6 +474,37 @@ a[data-goon="link"][data-goon-native="download"]:hover {
   min-height: 16rem;
 }
 
+[data-goon="palm-layout"][data-goon-mobile-palm] {
+  --sidebar-gap: 0;
+}
+
+[data-goon="palm-layout"][data-goon-mobile-palm="browse"] > [data-goon="palm"] {
+  min-height: 0;
+  max-block-size: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+[data-goon="palm-layout"][data-goon-mobile-palm="detail"] > [data-goon="palm"] {
+  min-height: 0;
+  inline-size: 100%;
+  flex-basis: 100%;
+}
+
+[data-goon="palm-mobile-back"] {
+  display: none;
+}
+
+[data-goon="palm-layout"][data-goon-mobile-palm="detail"] [data-goon="palm-detail"][data-goon-palm-active="true"] > [data-goon="palm-mobile-back"] {
+  display: grid;
+  place-items: center;
+  inline-size: fit-content;
+  margin-inline-start: auto;
+  margin-block-end: var(--el-s-1, 0.5rem);
+  line-height: 1;
+}
+
 [data-goon="palm-detail"] {
   display: none;
 }
@@ -738,6 +785,24 @@ a[data-goon="link"][data-goon-native="download"]:hover {
   opacity: 1;
 }
 
+[data-goon="accordion-section"][data-goon-intro-open="true"] > [data-goon="accordion-content"] {
+  position: relative;
+  overflow: clip;
+  transition: none;
+  will-change: height, opacity, transform;
+}
+
+[data-goon="accordion-section"][data-goon-intro-open="true"] > [data-goon="accordion-content"]::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  block-size: min(4rem, 45%);
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--b1, #fff));
+  animation: goon-intro-open-edge 1100ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 /* Rightward arrival cue on first paint of the expanded state. Without
  * @starting-style the new state would apply immediately with no anim. */
 @starting-style {
@@ -745,6 +810,12 @@ a[data-goon="link"][data-goon-native="download"]:hover {
     transform: translateX(4px);
     opacity: 0;
   }
+}
+
+@keyframes goon-intro-open-edge {
+  0% { opacity: 0.95; }
+  70% { opacity: 0.65; }
+  100% { opacity: 0; }
 }
 
 /* ── Keyboard Navigation (JRPG snappiness) ───────── */

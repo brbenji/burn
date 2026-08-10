@@ -24,6 +24,7 @@
   let root = null;
   let activeNode = null;
   let activeVisualNode = null;
+  let activeScrollToken = 0;
   let editMode = false;
   let editInput = null;
   let cursorMemory = new Map();
@@ -38,11 +39,20 @@
   // document, lazily during the rAF debounce callback.
   const paginationObservers = new Map();
   const paginationHeightFloors = new Map();
+  const paginationSwipeHandlers = new WeakMap();
   const PAGINATION_LS_PREFIX = 'goon-page:';
   const CURSOR_LS_KEY = 'goon-cursor-path';
   const PAGINATION_DEBUG_KEY = 'goon-debug-pagination';
+  const MOBILE_PALM_ATTR = 'data-goon-mobile-palm';
+  const STABLE_REGION_ATTR = 'data-goon-stable-region';
+  const REVEAL_STEP_MS = 300;
+  const REVEAL_DURATION_MS = 1000;
+  const REVEAL_OPEN_PAUSE_MS = 900;
+  const INTRO_ACCORDION_OPEN_ATTR = 'data-goon-intro-open';
+  const INTRO_ACCORDION_OPEN_MS = 1100;
   let paginationViewportRaf = false;
   let lastPaginationViewportHeight = 0;
+  let initialRevealDone = false;
   // id of the palm-item the user drilled FROM into the current swapped
   // palm-stage pane. Used to return focus to the origin when backing out
   // via palm-back / Escape / Left. Cleared after a successful restore.
@@ -451,6 +461,89 @@
     return item;
   }
 
+  function mobilePalmWrappedNow(layout) {
+    if (!layout) return false;
+    const currentMode = layout.getAttribute(MOBILE_PALM_ATTR);
+    if (currentMode) layout.removeAttribute(MOBILE_PALM_ATTR);
+    const wrapped = isSidebarWrapped(layout);
+    if (currentMode) layout.setAttribute(MOBILE_PALM_ATTR, currentMode);
+    return wrapped;
+  }
+
+  function ensureMobilePalmBack(layout) {
+    if (!layout) return null;
+    const palm = layout.querySelector(':scope > [data-goon="palm"]');
+    if (!palm) return null;
+    palm.querySelectorAll(':scope > [data-goon="palm-mobile-back"]').forEach(back => {
+      back.parentElement.removeChild(back);
+    });
+    let firstBack = null;
+    palm.querySelectorAll(':scope > [data-goon="palm-detail"]').forEach(detail => {
+      let back = detail.querySelector(':scope > [data-goon="palm-mobile-back"]');
+      if (!back) {
+        back = document.createElement('button');
+        back.type = 'button';
+        back.setAttribute('data-goon', 'palm-mobile-back');
+        back.setAttribute('data-ignore-morph', '');
+        back.setAttribute('aria-label', 'Back to items');
+        back.textContent = '×';
+        detail.insertBefore(back, detail.firstChild);
+      }
+      if (!firstBack) firstBack = back;
+    });
+    return firstBack;
+  }
+
+  function syncMobilePalmLayout(layout) {
+    if (!layout) return false;
+    if (!mobilePalmWrappedNow(layout)) {
+      clearAttr(layout, MOBILE_PALM_ATTR);
+      return false;
+    }
+    ensureMobilePalmBack(layout);
+    const mode = layout.getAttribute(MOBILE_PALM_ATTR);
+    if (mode !== 'detail' && mode !== 'browse') {
+      setAttr(layout, MOBILE_PALM_ATTR, 'browse');
+    }
+    return true;
+  }
+
+  function syncMobilePalmLayouts() {
+    if (!root) return;
+    root.querySelectorAll('[data-goon="palm-layout"]').forEach(syncMobilePalmLayout);
+  }
+
+  function openMobilePalmDetail(item) {
+    if (!item || item.getAttribute('data-goon') !== 'palm-item') return false;
+    const portalIn = item.getAttribute('data-goon-portal-in');
+    const detail = portalIn ? document.getElementById(portalIn) : null;
+    if (!detail || detail.getAttribute('data-goon') !== 'palm-detail') return false;
+    const layout = detail.closest('[data-goon="palm-layout"]');
+    if (!layout || !syncMobilePalmLayout(layout)) return false;
+    stabilizeRegion(stableRegionFor(layout));
+    if (layout.getAttribute(MOBILE_PALM_ATTR) !== 'detail') setAttr(layout, MOBILE_PALM_ATTR, 'detail');
+    rebuildPaginationForLayout(layout, 'mobile-detail-open', item);
+    return true;
+  }
+
+  function closeMobilePalmDetail(layout) {
+    if (!layout) return false;
+    if (layout.getAttribute(MOBILE_PALM_ATTR) !== 'detail') return false;
+    const detail = layout.querySelector('[data-goon="palm-detail"][data-goon-palm-active="true"]');
+    const itemId = detail ? detail.getAttribute('data-goon-portal-out') : null;
+    const item = itemId ? document.getElementById(itemId) : null;
+    if (syncMobilePalmLayout(layout) && layout.getAttribute(MOBILE_PALM_ATTR) !== 'browse') {
+      setAttr(layout, MOBILE_PALM_ATTR, 'browse');
+    }
+    clearStableRegion(stableRegionFor(layout));
+    rebuildPaginationForLayout(layout, 'mobile-detail-close', item);
+    if (item) {
+      setActive(item, 'no-scroll');
+      if (typeof item.focus === 'function') item.focus({ preventScroll: true });
+    }
+    return true;
+  }
+
   function isVisualControl(el) {
     if (!el) return false;
     if (el.matches('input[type="hidden"]')) return false;
@@ -481,6 +574,112 @@
       if (isVisualControl(control)) return control;
     }
     return node;
+  }
+
+  function revealTargetForNode(node) {
+    if (!node) return null;
+    const role = node.getAttribute('data-goon');
+    if (role === 'root-section') {
+      return node.querySelector(':scope > [data-goon="label"]') || activeVisualTarget(node);
+    }
+    if (role === 'accordion-header') {
+      return node.closest('[data-goon="accordion-section"]') || activeVisualTarget(node);
+    }
+    return activeVisualTarget(node);
+  }
+
+  function revealTargetsForNode(node) {
+    if (!node) return [];
+    if (node.getAttribute('data-goon') === 'header') {
+      return Array.from(node.children)
+        .filter(el => el instanceof HTMLElement && visibleElement(el));
+    }
+    const target = revealTargetForNode(node);
+    return target && visibleElement(target) ? [target] : [];
+  }
+
+  function revealChildrenForNode(node) {
+    if (!node) return [];
+    const role = node.getAttribute('data-goon');
+    if (role === 'header') {
+      // Header internals are not a full goon subtree; reveal the title/auth
+      // blocks as the first visible level and leave their form controls alone.
+      return [];
+    }
+    return getTraversableChildren(node).filter(visibleElement);
+  }
+
+  function collectInitialRevealTargets() {
+    if (!root) return [];
+    const targets = [];
+    const seen = new Set();
+
+    const addTargets = (node, delay) => {
+      for (const target of revealTargetsForNode(node)) {
+        if (seen.has(target)) continue;
+        seen.add(target);
+        targets.push({ el: target, delay });
+      }
+    };
+
+    let delayStep = 0;
+    let parents = getTraversableChildren(root).filter(visibleElement);
+
+    parents.forEach((node, idx) => {
+      addTargets(node, idx * REVEAL_STEP_MS);
+    });
+    delayStep = parents.length;
+
+    while (parents.length > 0) {
+      const childLists = parents
+        .map(parent => revealChildrenForNode(parent))
+        .filter(children => children.length > 0);
+      if (childLists.length === 0) break;
+
+      const nextParents = [];
+      const maxChildren = Math.max(...childLists.map(children => children.length));
+      for (let childIdx = 0; childIdx < maxChildren; childIdx++) {
+        const delay = delayStep * REVEAL_STEP_MS;
+        for (const children of childLists) {
+          const child = children[childIdx];
+          if (!child) continue;
+          addTargets(child, delay);
+          nextParents.push(child);
+        }
+        delayStep++;
+      }
+      parents = nextParents;
+    }
+
+    return targets;
+  }
+
+  function prefersReducedMotion() {
+    return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  function runInitialReveal(targets = null) {
+    if (initialRevealDone || !root) return;
+    initialRevealDone = true;
+    const clearIntro = () => document.body && document.body.removeAttribute('data-goon-intro');
+    if (!Element.prototype.animate) { clearIntro(); return; }
+    if (prefersReducedMotion()) { clearIntro(); return; }
+
+    targets = targets || collectInitialRevealTargets();
+    if (targets.length === 0) { clearIntro(); return; }
+    const lastDelay = Math.max(...targets.map(target => target.delay));
+    targets.forEach(({ el, delay }) => {
+      el.animate([
+        { opacity: 0, transform: 'translateY(0.35rem)' },
+        { opacity: 1, transform: 'translateY(0)' },
+      ], {
+        delay,
+        duration: REVEAL_DURATION_MS,
+        easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+        fill: 'both',
+      });
+    });
+    window.setTimeout(clearIntro, lastDelay + REVEAL_DURATION_MS + 50);
   }
 
   function clearActiveVisual() {
@@ -530,6 +729,27 @@
     return null;
   }
 
+  function stableRegionFor(node) {
+    if (!node) return null;
+    return node.closest('[data-goon="accordion-content"]')
+        || node.closest('[data-goon="palm-stage"]')
+        || node.closest('[data-goon="root-section"]');
+  }
+
+  function stabilizeRegion(region) {
+    if (!region || !document.contains(region)) return;
+    const rect = region.getBoundingClientRect();
+    if (!Number.isFinite(rect.height) || rect.height <= 0) return;
+    region.style.setProperty('--goon-stable-block-size', rect.height + 'px');
+    setAttr(region, STABLE_REGION_ATTR, 'true');
+  }
+
+  function clearStableRegion(region) {
+    if (!region) return;
+    region.style.removeProperty('--goon-stable-block-size');
+    clearAttr(region, STABLE_REGION_ATTR);
+  }
+
   function scrollParent(el, axis = 'y') {
     let p = el ? el.parentElement : null;
     const overflowProp = axis === 'x' ? 'overflowX' : 'overflowY';
@@ -569,13 +789,22 @@
 
   function scheduleEnsureActiveVisible(node) {
     if (!node) return;
+    const token = ++activeScrollToken;
     if (node.getAttribute('data-goon') === 'article-full') {
       window.setTimeout(() => {
-        requestAnimationFrame(() => ensureActiveVisible(node));
+        requestAnimationFrame(() => {
+          if (token === activeScrollToken) ensureActiveVisible(node);
+        });
       }, 175);
       return;
     }
-    requestAnimationFrame(() => ensureActiveVisible(node));
+    requestAnimationFrame(() => {
+      if (token === activeScrollToken) ensureActiveVisible(node);
+    });
+  }
+
+  function cancelEnsureActiveVisible() {
+    activeScrollToken++;
   }
 
   function scrollElementIntoContainer(el, container, axis = 'x') {
@@ -686,7 +915,8 @@
       rememberCursor(node);
       const palmItem = syncPalmVisuals(node);
       if (direction === 'nav') paginateForNode(palmItem || node);
-      scheduleEnsureActiveVisible(node);
+      if (direction === 'no-scroll') cancelEnsureActiveVisible();
+      else scheduleEnsureActiveVisible(node);
       return;
     }
     if (editMode) exitEditMode();
@@ -708,7 +938,8 @@
     setActiveVisual(node);
     const palmItem = syncPalmVisuals(node);
     if (direction === 'nav') paginateForNode(palmItem || node);
-    scheduleEnsureActiveVisible(node);
+    if (direction === 'no-scroll') cancelEnsureActiveVisible();
+    else scheduleEnsureActiveVisible(node);
   }
 
   function enterEditMode(input) {
@@ -747,12 +978,15 @@
     return node && node.getAttribute('data-goon') === 'accordion-header';
   }
 
-  function toggleAccordion(headerBtn, expand, persist = true) {
+  function toggleAccordion(headerBtn, expand, persist = true, anchor = persist) {
     const section = headerBtn.closest('[data-goon="accordion-section"]');
     if (!section) return;
     const content = section.querySelector('[data-goon="accordion-content"]');
     if (!content) return;
     const val = expand ? 'true' : 'false';
+    if (expand && anchor) {
+      section.scrollIntoView({ block: 'start', inline: 'nearest' });
+    }
     if (persist) {
       setAttr(headerBtn, 'data-goon-accordion-expanded', val);
       setAttr(content, 'data-goon-accordion-expanded', val);
@@ -767,7 +1001,24 @@
       section.setAttribute('data-goon-accordion-expanded', val);
     }
 
-    if (expand && persist) setupPaginationInPane(content);
+    if (expand) setupPaginationInPane(content);
+  }
+
+  function activateAccordionHeader(header, expand, enterContent = false) {
+    if (!header) return;
+    if (root) setAttr(root, NAV_ATTR, 'active');
+    setActive(header, 'no-scroll');
+    toggleAccordion(header, expand);
+    if (!expand || !enterContent) return;
+    const section = header.closest('[data-goon="accordion-section"]');
+    const content = section ? section.querySelector('[data-goon="accordion-content"]') : null;
+    if (!content) return;
+    const kids = getTraversableChildren(content);
+    if (kids.length > 0) {
+      const mem = section && section.id ? cursorMemory.get(section.id) : null;
+      const remembered = mem ? document.getElementById(mem) : null;
+      setActive((remembered && content.contains(remembered)) ? remembered : kids[0], 'no-scroll');
+    }
   }
 
   function getAccordionHeaders(node) {
@@ -814,6 +1065,8 @@
   function drillIn() {
     if (!activeNode) return activateFirst();
 
+    if (openMobilePalmDetail(activeNode)) return;
+
     // 0. Palm-back: clear palm-active and restore focus to drill origin.
     if (activeNode.getAttribute('data-goon') === 'palm-back') {
       if (handlePalmBack()) return;
@@ -834,17 +1087,7 @@
 
     // 2. Accordion header: expand and enter content.
     if (isAccordionHeader(activeNode)) {
-      toggleAccordion(activeNode, true);
-      const section = activeNode.closest('[data-goon="accordion-section"]');
-      const content = section ? section.querySelector('[data-goon="accordion-content"]') : null;
-      if (content) {
-        const kids = getTraversableChildren(content);
-        if (kids.length > 0) {
-          const mem = section && section.id ? cursorMemory.get(section.id) : null;
-          const remembered = mem ? document.getElementById(mem) : null;
-          setActive((remembered && content.contains(remembered)) ? remembered : kids[0]);
-        }
-      }
+      activateAccordionHeader(activeNode, true, true);
       return;
     }
 
@@ -973,6 +1216,9 @@
 
   function backOut() {
     if (!activeNode) return;
+
+    const mobileLayout = activeNode.closest('[data-goon="palm-layout"]');
+    if (mobileLayout && closeMobilePalmDetail(mobileLayout)) return;
 
     // 1. Portal-out: only fires when standing ON the portal-out node itself.
     // Symmetric with portal-in: one keypress = one stop crossed. Left from
@@ -1195,14 +1441,37 @@
     return rect.height + before + after;
   }
 
+  function cssPx(el, prop, fallbackProp = null) {
+    if (!el) return 0;
+    const style = getComputedStyle(el);
+    return parseFloat(style[prop] || (fallbackProp ? style[fallbackProp] : '') || '0') || 0;
+  }
+
+  function paginationFrameTop(container) {
+    const section = container.closest('[data-goon="accordion-section"]');
+    const content = container.closest('[data-goon="accordion-content"]');
+    if (!section || !content) {
+      const rect = container.getBoundingClientRect();
+      return Math.max(0, rect.top);
+    }
+
+    const header = accordionHeader(section);
+    const scrollMargin = cssPx(section, 'scrollMarginBlockStart', 'scrollMarginTop');
+    const localOffset = Math.max(
+      0,
+      container.getBoundingClientRect().top - content.getBoundingClientRect().top
+    );
+    return scrollMargin + outerBlockSize(header) + localOffset;
+  }
+
   function paginationAvailableHeight(container, controls, wrapped) {
     const viewportHeight = paginationViewportHeight();
-    const rect = container.getBoundingClientRect();
     const bottomPad = Math.max(12, Math.min(40, viewportHeight * 0.04));
-    let available = viewportHeight - Math.max(0, rect.top) - outerBlockSize(controls) - bottomPad;
+    let available = viewportHeight - paginationFrameTop(container) - outerBlockSize(controls) - bottomPad;
 
     const palmLayout = container.closest('[data-goon="palm-layout"]');
-    if (wrapped && palmLayout) {
+    const mobileMode = palmLayout ? palmLayout.getAttribute(MOBILE_PALM_ATTR) : null;
+    if (wrapped && palmLayout && mobileMode !== 'browse') {
       const layoutStyle = getComputedStyle(palmLayout);
       const gap = parseFloat(layoutStyle.rowGap || layoutStyle.gap || '0') || 0;
       const palm = palmLayout.querySelector(':scope > [data-goon="palm"]');
@@ -1264,6 +1533,53 @@
         || !!node.closest('[data-goon="page-controls"]');
   }
 
+  function setupPaginationSwipe(state) {
+    const container = state.el;
+    if (!container || !container.closest('[data-goon="palm-layout"]')) return;
+
+    let startX = 0;
+    let startY = 0;
+    let tracking = false;
+
+    const onStart = (e) => {
+      const layout = container.closest('[data-goon="palm-layout"]');
+      const mode = layout ? layout.getAttribute(MOBILE_PALM_ATTR) : null;
+      if (!layout || (mode !== 'browse' && mode !== 'detail')) return;
+      if (!e.touches || e.touches.length !== 1) return;
+      if (e.target.closest('a, button, input, textarea, select, [data-goon="page-controls"]')) return;
+      tracking = true;
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+    };
+
+    const onEnd = (e) => {
+      if (!tracking) return;
+      tracking = false;
+      const touch = e.changedTouches && e.changedTouches[0];
+      if (!touch) return;
+      const dx = touch.clientX - startX;
+      const dy = touch.clientY - startY;
+      const absX = Math.abs(dx);
+      const absY = Math.abs(dy);
+      const width = container.getBoundingClientRect().width || 320;
+      const threshold = Math.max(32, Math.min(96, width * 0.14));
+      if (absX < threshold || absX < absY * 1.35) return;
+      e.preventDefault();
+      paginateTo(state, dx < 0 ? state.currentPage + 1 : state.currentPage - 1);
+    };
+
+    const onCancel = () => { tracking = false; };
+
+    container.addEventListener('touchstart', onStart, { passive: true });
+    container.addEventListener('touchend', onEnd, { passive: false });
+    container.addEventListener('touchcancel', onCancel, { passive: true });
+    paginationSwipeHandlers.set(container, () => {
+      container.removeEventListener('touchstart', onStart);
+      container.removeEventListener('touchend', onEnd);
+      container.removeEventListener('touchcancel', onCancel);
+    });
+  }
+
   function mutationIsPaginationOnly(mutation) {
     if (nodeIsPaginationControl(mutation.target)) return true;
     const changed = [...mutation.addedNodes, ...mutation.removedNodes];
@@ -1273,13 +1589,18 @@
     });
   }
 
-  function setupPagination(container) {
+  function setupPagination(container, preferredNode = null) {
     // Idempotency guard: disconnect any live observer and remove stale controls
     // before re-measuring. Prevents observer accumulation when setupPagination
     // is called more than once for the same container (e.g. accordion re-expand
     // after a morph stripped data-goon-paginate).
     const existingRo = paginationObservers.get(container);
     if (existingRo) { existingRo.disconnect(); paginationObservers.delete(container); }
+    const existingSwipe = paginationSwipeHandlers.get(container);
+    if (existingSwipe) {
+      existingSwipe();
+      paginationSwipeHandlers.delete(container);
+    }
     paginatedContainers = paginatedContainers.filter(s => {
       if (s.el !== container) return true;
       if (s.controls.parentElement) s.controls.parentElement.removeChild(s.controls);
@@ -1293,6 +1614,7 @@
 
     const palmLayout = container.closest('[data-goon="palm-layout"]');
     const wrapped = palmLayout ? isSidebarWrapped(palmLayout) : false;
+    if (palmLayout) syncMobilePalmLayout(palmLayout);
 
     const controlsParts = createPaginationControls(ensureId(container));
     const { controls, prevBtn, nextBtn, pageInfo } = controlsParts;
@@ -1310,16 +1632,11 @@
     const isGrid = containerStyle.display === 'grid';
     const gap = parseFloat(containerStyle.rowGap || '0') || 0;
     let lastTop = null;
-    let rows = 0;
 
     for (const item of items) {
       const itemRect = item.getBoundingClientRect();
       if (isGrid && lastTop !== null && Math.abs(itemRect.top - lastTop) < 1) {
         pageSize++; continue;
-      }
-      if (isGrid) {
-        rows++;
-        if (wrapped && rows > 2) break;
       }
       lastTop = itemRect.top;
       accHeight += itemRect.height + (pageSize > 0 ? gap : 0);
@@ -1346,6 +1663,7 @@
     const lsKey = paginationKey(container);
     let startPage = 0;
     let hasStoredPage = false;
+    let hasPreferredPage = false;
     if (lsKey) {
       try {
         const stored = localStorage.getItem(lsKey);
@@ -1359,7 +1677,15 @@
       } catch (_) {}
     }
 
-    if (activeNode && !hasStoredPage) {
+    if (preferredNode) {
+      const directAncestor = items.find(c => c === preferredNode || c.contains(preferredNode));
+      if (directAncestor) {
+        startPage = Math.floor(items.indexOf(directAncestor) / pageSize);
+        hasPreferredPage = true;
+      }
+    }
+
+    if (activeNode && !hasPreferredPage && !hasStoredPage) {
       const directAncestor = items.find(c => c === activeNode || c.contains(activeNode));
       if (directAncestor) startPage = Math.floor(items.indexOf(directAncestor) / pageSize);
     }
@@ -1370,7 +1696,7 @@
     paginationDebug('setup', {
       label, items: items.length, pageSize, totalPages, startPage, wrapped,
       width: container.getBoundingClientRect().width,
-      availableHeight, accHeight, gap, heightKey,
+      availableHeight, accHeight, gap, heightKey, hasPreferredPage,
     });
 
     prevBtn.addEventListener('click', (e) => {
@@ -1383,6 +1709,7 @@
       e.stopPropagation();
       paginateTo(state, state.currentPage + 1);
     });
+    setupPaginationSwipe(state);
 
     paginateTo(state, startPage);
     applyMeasuredPageHeight(state);
@@ -1538,7 +1865,7 @@
     });
   }
 
-  function rebuildPaginationState(state, reason) {
+  function rebuildPaginationState(state, reason, preferredNode = null) {
     if (!state || !state.el || !document.contains(state.el)) return;
     if (state.el.getBoundingClientRect().width === 0) return;
 
@@ -1552,18 +1879,36 @@
     state.el.style.removeProperty('min-height');
     if (!state.el.hasAttribute('data-goon-paginate')) state.el.setAttribute('data-goon-paginate', '');
     paginationDebug('viewport-rebuild', { label: paginationLabel(state.el), reason });
-    setupPagination(state.el);
+    setupPagination(state.el, preferredNode);
+  }
+
+  function rebuildPaginationForLayout(layout, reason, preferredNode = null) {
+    if (!layout) return;
+    const list = layout.querySelector(':scope > [data-goon="palm-list"]');
+    if (!list) return;
+    requestAnimationFrame(() => {
+      if (!document.contains(list) || list.getBoundingClientRect().width === 0) return;
+      const state = paginatedContainers.find(s => s.el === list);
+      if (state) {
+        rebuildPaginationState(state, reason, preferredNode);
+      } else {
+        if (!list.hasAttribute('data-goon-paginate')) list.setAttribute('data-goon-paginate', '');
+        paginationDebug('layout-rebuild:new', { label: paginationLabel(list), reason });
+        setupPagination(list, preferredNode);
+      }
+    });
   }
 
   function shouldViewportRebuildPagination(state) {
     if (!state || !state.el || !document.contains(state.el)) return false;
     const palmLayout = state.el.closest('[data-goon="palm-layout"]');
-    return !!(palmLayout && isSidebarWrapped(palmLayout));
+    return !!(palmLayout && (palmLayout.hasAttribute(MOBILE_PALM_ATTR) || isSidebarWrapped(palmLayout)));
   }
 
   function schedulePaginationViewportRebuild(reason) {
     const nextHeight = paginationViewportHeight();
     const force = reason === 'orientation' || reason === 'init-active';
+    if (root) syncMobilePalmLayouts();
     if (!force && Math.abs(nextHeight - lastPaginationViewportHeight) < 1) return;
     const states = [...paginatedContainers].filter(shouldViewportRebuildPagination);
     if (states.length === 0) {
@@ -1883,6 +2228,7 @@
     }
 
     restoreJSState();
+    syncMobilePalmLayouts();
     // Re-assert item visibility in case Datastar morph wiped style.display.
     // data-ignore-morph is restored by restoreJSState above, but the items'
     // inline display that paginateTo set is not in jsState and can be reset.
@@ -1954,10 +2300,13 @@
     if (!root) return;
     if (e.target.closest('[data-goon="page-controls"]')) return;
     if (e.target.closest('[data-goon="palm-back"]')) return;
+    if (e.target.closest('[data-goon="palm-mobile-back"]')) return;
+    if (e.target.closest('[data-goon="accordion-header"]')) return;
     const node = e.target.closest(NODE_SEL);
     if (node && root.contains(node)) {
       setAttr(root, NAV_ATTR, 'active');
       setActive(node);
+      if (openMobilePalmDetail(node)) return;
       const portalIn = node.getAttribute('data-goon-portal-in');
       const target = portalIn ? document.getElementById(portalIn) : null;
       if (target && target.getAttribute('data-goon') !== 'palm-detail') drillIn();
@@ -1969,6 +2318,7 @@
     if (root.contains(e.target)) {
       if (e.target.closest('[data-goon="page-controls"]')) return;
       if (e.target.closest('[data-goon="palm-back"]')) return;
+      if (e.target.closest('[data-goon="palm-mobile-back"]')) return;
       const navState = root.getAttribute(NAV_ATTR);
       const node = e.target.closest(NODE_SEL);
       if (node && root.contains(node)) {
@@ -1998,12 +2348,23 @@
     handlePalmBack(palmBack);
   }
 
+  function onMobilePalmBackClick(e) {
+    if (!root) return;
+    const back = e.target.closest('[data-goon="palm-mobile-back"]');
+    if (!back || !root.contains(back)) return;
+    const layout = back.closest('[data-goon="palm-layout"]');
+    if (!layout) return;
+    e.preventDefault();
+    e.stopPropagation();
+    closeMobilePalmDetail(layout);
+  }
+
   function onAccordionClick(e) {
     const header = e.target.closest('[data-goon="accordion-header"]');
     if (!header) return;
     e.preventDefault();
     const expanded = header.getAttribute('data-goon-accordion-expanded') === 'true';
-    toggleAccordion(header, !expanded);
+    activateAccordionHeader(header, !expanded);
   }
 
   // Mouse-only async click path. Keyboard drillIn() runs maybePalmStageSwap
@@ -2073,34 +2434,81 @@
     closePassModal();
   }
 
-  function restoreAccordionState() {
+  function collapseAccordionsForInitialReveal() {
     if (!root) return;
     const headers = root.querySelectorAll('[data-goon="accordion-header"]');
-    let anyRestored = false;
     headers.forEach(header => {
       const section = header.closest('[data-goon="accordion-section"]');
       if (!section) return;
-      const path = section.getAttribute('data-goon-path');
-      if (!path) return;
-      let stored = null;
-      try { stored = localStorage.getItem(ACCORDION_LS_PREFIX + path); } catch (_) {}
-      if (stored !== 'true') return;
       const content = section.querySelector('[data-goon="accordion-content"]');
-      setAttr(header, 'data-goon-accordion-expanded', 'true');
-      if (content) setAttr(content, 'data-goon-accordion-expanded', 'true');
-      setAttr(section, 'data-goon-accordion-expanded', 'true');
-      anyRestored = true;
+      setAttr(header, 'data-goon-accordion-expanded', 'false');
+      if (content) setAttr(content, 'data-goon-accordion-expanded', 'false');
+      setAttr(section, 'data-goon-accordion-expanded', 'false');
     });
-    // First visit: expand the first accordion-section so the page isn't blank.
-    if (!anyRestored && headers.length > 0) {
-      const first = headers[0];
-      const section = first.closest('[data-goon="accordion-section"]');
-      if (section) {
-        const content = section.querySelector('[data-goon="accordion-content"]');
-        setAttr(first, 'data-goon-accordion-expanded', 'true');
-        if (content) setAttr(content, 'data-goon-accordion-expanded', 'true');
-        setAttr(section, 'data-goon-accordion-expanded', 'true');
+  }
+
+  function playIntroAccordionOpen(section, content) {
+    if (!section || !content || !Element.prototype.animate || prefersReducedMotion()) return;
+    const targetHeight = content.scrollHeight;
+    if (targetHeight <= 0) return;
+
+    setAttr(section, INTRO_ACCORDION_OPEN_ATTR, 'true');
+    content.style.overflow = 'clip';
+    content.style.height = '0px';
+    content.style.opacity = '0';
+    content.style.transform = 'translateY(0.35rem)';
+
+    const clearIntroOpen = () => {
+      clearAttr(section, INTRO_ACCORDION_OPEN_ATTR);
+      content.style.removeProperty('overflow');
+      content.style.removeProperty('height');
+      content.style.removeProperty('opacity');
+      content.style.removeProperty('transform');
+    };
+
+    requestAnimationFrame(() => {
+      const animation = content.animate([
+        { height: '0px', opacity: 0, transform: 'translateY(0.35rem)' },
+        { height: `${targetHeight}px`, opacity: 1, transform: 'translateY(0)' },
+      ], {
+        duration: INTRO_ACCORDION_OPEN_MS,
+        easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+        fill: 'both',
+      });
+      if (animation.finished) {
+        animation.finished.then(clearIntroOpen, clearIntroOpen);
+      } else {
+        window.setTimeout(clearIntroOpen, INTRO_ACCORDION_OPEN_MS + 50);
       }
+    });
+  }
+
+  function openInitialLibraryAccordion() {
+    if (!root) return;
+    const library = root.querySelector('[data-goon="root-section"][data-goon-path="/library"]');
+    const header = library && library.querySelector('[data-goon="accordion-header"]');
+    if (!header || !visibleElement(header)) return;
+    const section = header.closest('[data-goon="accordion-section"]');
+    const content = section && section.querySelector('[data-goon="accordion-content"]');
+    if (root) setAttr(root, NAV_ATTR, 'active');
+    setActive(header, 'no-scroll');
+    toggleAccordion(header, true, true, false);
+    requestAnimationFrame(() => playIntroAccordionOpen(section, content));
+  }
+
+  function scheduleInitialLibraryAccordion() {
+    if (prefersReducedMotion()) {
+      if (document.body) document.body.removeAttribute('data-goon-intro');
+      openInitialLibraryAccordion();
+      return;
+    }
+    const targets = collectInitialRevealTargets();
+    const delay = targets.length === 0
+      ? REVEAL_STEP_MS
+      : Math.max(...targets.map(target => target.delay)) + REVEAL_DURATION_MS + REVEAL_OPEN_PAUSE_MS;
+    window.setTimeout(openInitialLibraryAccordion, delay);
+    if (!initialRevealDone) {
+      requestAnimationFrame(() => runInitialReveal(targets));
     }
   }
 
@@ -2127,11 +2535,13 @@
     if (!root.hasAttribute(NAV_ATTR)) setAttr(root, NAV_ATTR, 'dormant');
 
     statusLiveEl = document.getElementById('status-live');
-    restoreAccordionState(); // must run before initPagination so expanded content has real heights
+    collapseAccordionsForInitialReveal();
     initPagination();
+    syncMobilePalmLayouts();
     lastPaginationViewportHeight = paginationViewportHeight();
     if (!tryRestoreCursor()) activateFirst();
     schedulePaginationViewportRebuild('init-active');
+    scheduleInitialLibraryAccordion();
     observer.observe(root, { childList: true, subtree: true });
 
     const stripEl = document.getElementById('status-live');
@@ -2146,6 +2556,7 @@
   document.addEventListener('focusin', onFocusIn);
   document.addEventListener('click', onClickOutside, true);
   document.addEventListener('click', onPalmBackClick);
+  document.addEventListener('click', onMobilePalmBackClick);
   document.addEventListener('click', onAccordionClick);
   document.addEventListener('click', onAsyncClick);
   document.addEventListener('click', onDownloadClick, true);
