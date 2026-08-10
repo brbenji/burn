@@ -1248,17 +1248,16 @@
     ::  HTTP response debugging cheatsheet. These local-only probes are
     ::  intentionally before the auth/download paths.
     ::
-    ::    curl -v --raw http://127.0.0.1:80/apps/burn/debug-cl-same
-    ::      200 + content-length=5; header and body cards returned together.
+    ::    curl -v --raw http://127.0.0.1:80/apps/burn/debug-hello-no-cl
+    ::      200 without content-length; header/body/kick returned together.
+    ::      Expected: curl prints "hello".
     ::
-    ::    curl -v --raw http://127.0.0.1:80/apps/burn/debug-cl-later
-    ::      200 + content-length=5; header now, body "hello" after 1s.
+    ::    curl -v --raw http://127.0.0.1:80/apps/burn/debug-hello-cl
+    ::      200 + content-length=5; header/body/kick returned together.
+    ::      Expected if Vere clobbers Content-Length from %start data: no body.
     ::
     ::    curl -v --raw http://127.0.0.1:80/apps/burn/debug-cl-206-same
     ::      206 + content-length=5 + content-range; header/body together.
-    ::
-    ::    curl -v --raw http://127.0.0.1:80/apps/burn/debug-cl-206-later
-    ::      206 + content-length=5 + content-range; body after 1s.
     ::
     ::    curl -v --raw http://127.0.0.1:80/apps/burn/debug-idle-30
     ::    curl -v --raw http://127.0.0.1:80/apps/burn/debug-idle-46
@@ -1266,23 +1265,25 @@
     ::      200 without content-length; header now, body after N seconds.
     ::      These test the real Vere/Eyre idle-close window.
     ::
-    ?:  =("/apps/burn/debug-cl-same" raw-url)
+    ?:  =("/apps/burn/debug-hello-no-cl" raw-url)
       =/  body=octs  (as-octs:mimes:html 'hello')
       =/  rh=response-header:http
-        [200 ~[['content-type' 'text/plain'] ['content-length' '5']]]
-      ~&  >>>  "burn: DEBUG CL same eyre-id={<(short-id-ta eyre-id)>} header+data same return content-length=5 body=5"
+        [200 ~[['content-type' 'text/plain']]]
+      ~&  >>>  "burn: DEBUG hello no-cl eyre-id={<(short-id-ta eyre-id)>} header+data same body=5"
       :_  this
       :~  [%give %fact ~[/http-response/[eyre-id]] %http-response-header !>(rh)]
           [%give %fact ~[/http-response/[eyre-id]] %http-response-data !>(`(unit octs)`(some body))]
           [%give %kick ~[/http-response/[eyre-id]] ~]
       ==
-    ?:  =("/apps/burn/debug-cl-later" raw-url)
+    ?:  =("/apps/burn/debug-hello-cl" raw-url)
+      =/  body=octs  (as-octs:mimes:html 'hello')
       =/  rh=response-header:http
         [200 ~[['content-type' 'text/plain'] ['content-length' '5']]]
-      ~&  >>>  "burn: DEBUG CL later eyre-id={<(short-id-ta eyre-id)>} header now content-length=5 body in 1s"
+      ~&  >>>  "burn: DEBUG hello cl eyre-id={<(short-id-ta eyre-id)>} header+data same content-length=5 body=5"
       :_  this
       :~  [%give %fact ~[/http-response/[eyre-id]] %http-response-header !>(rh)]
-          [%pass /debug-cl-later/[eyre-id] %arvo %b %wait (add now.bowl ~s1)]
+          [%give %fact ~[/http-response/[eyre-id]] %http-response-data !>(`(unit octs)`(some body))]
+          [%give %kick ~[/http-response/[eyre-id]] ~]
       ==
     ?:  =("/apps/burn/debug-cl-206-same" raw-url)
       =/  body=octs  (as-octs:mimes:html 'hello')
@@ -1293,14 +1294,6 @@
       :~  [%give %fact ~[/http-response/[eyre-id]] %http-response-header !>(rh)]
           [%give %fact ~[/http-response/[eyre-id]] %http-response-data !>(`(unit octs)`(some body))]
           [%give %kick ~[/http-response/[eyre-id]] ~]
-      ==
-    ?:  =("/apps/burn/debug-cl-206-later" raw-url)
-      =/  rh=response-header:http
-        [206 ~[['content-type' 'text/plain'] ['content-length' '5'] ['content-range' 'bytes 0-4/5'] ['accept-ranges' 'bytes']]]
-      ~&  >>>  "burn: DEBUG CL 206 later eyre-id={<(short-id-ta eyre-id)>} header now content-length=5 content-range=bytes 0-4/5 body in 1s"
-      :_  this
-      :~  [%give %fact ~[/http-response/[eyre-id]] %http-response-header !>(rh)]
-          [%pass /debug-cl-206-later/[eyre-id] %arvo %b %wait (add now.bowl ~s1)]
       ==
     ?:  =("/apps/burn/debug-idle-30" raw-url)
       =/  rh=response-header:http
@@ -1709,22 +1702,6 @@
   ::  behn: proxy timeout sweep
   ::
       [%behn %wake *]
-    ?:  ?=([%debug-cl-later @ ~] wire)
-      =/  eid=@ta  i.t.wire
-      =/  body=octs  (as-octs:mimes:html 'hello')
-      ~&  >>>  "burn: DEBUG CL later eyre-id={<(short-id-ta eid)>} body now len=5"
-      :_  this
-      :~  [%give %fact ~[/http-response/[eid]] %http-response-data !>(`(unit octs)`(some body))]
-          [%give %kick ~[/http-response/[eid]] ~]
-      ==
-    ?:  ?=([%debug-cl-206-later @ ~] wire)
-      =/  eid=@ta  i.t.wire
-      =/  body=octs  (as-octs:mimes:html 'hello')
-      ~&  >>>  "burn: DEBUG CL 206 later eyre-id={<(short-id-ta eid)>} body now len=5"
-      :_  this
-      :~  [%give %fact ~[/http-response/[eid]] %http-response-data !>(`(unit octs)`(some body))]
-          [%give %kick ~[/http-response/[eid]] ~]
-      ==
     ?:  ?=([%debug-idle-30 @ ~] wire)
       =/  eid=@ta  i.t.wire
       =/  body=octs  (as-octs:mimes:html 'hello')
